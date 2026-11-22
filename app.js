@@ -86,10 +86,12 @@
     sb.channel("jarvis")
       .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, refreshAll)
       .on("postgres_changes", { event: "*", schema: "public", table: "approvals" }, refreshAll)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "platform_stats" }, () => loadLive().then(() => { refreshAll(); if (state.view === "mine") renderMine(); if (state.view === "dash") renderMineMini(); }))
       .subscribe();
     setInterval(refreshAll, 30_000);
     setInterval(() => { if (state.view === "dash") loadDash(); }, 120_000);
     setInterval(tick, 1000); tick();
+    handleConnHash();
   }
 
   function tick() {
@@ -110,7 +112,7 @@
       sb.from("tasks").select("*").order("id"),
       sb.from("approvals").select("*").order("created_at", { ascending: false }).limit(60),
       sb.from("runs").select("id,task_id,started_at,finished_at,status,output,error,tasks(title,kind)").order("started_at", { ascending: false }).limit(60),
-      sb.from("settings").select("key,value").in("key", ["autopilot", "autopilot_saved", "minutes", "goals", "mystats", "hot_hidden"]),
+      sb.from("settings").select("key,value").in("key", ["autopilot", "autopilot_saved", "minutes", "goals", "mystats", "hot_hidden", "connections", "oauth_clients"]),
     ]);
     state.tasks = t.data ?? []; state.approvals = a.data ?? []; state.runs = r.data ?? [];
     state.settings = Object.fromEntries((st.data ?? []).map((x) => [x.key, x.value]));
@@ -167,6 +169,7 @@
     jobs.sort((p, q) => new Date(p.at) - new Date(q.at));
     state.d = { jobs, actions, vids: v.data ?? [], comps: c.data ?? [] };
     $("#dash-upd").textContent = "Cập nhật " + new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", timeZone: TZ });
+    await loadLive().catch(() => {});
     snapshotFollowers();
     renderDash();
     renderAICard();
@@ -530,12 +533,13 @@
     const sumV = views.reduce((a, b) => a + b, 0), eng = v30.reduce((a, v) => a + (v.likes || 0) + (v.comments || 0), 0);
     const ex = exclSet();
     const niche = (state.d.vids || []).filter((v) => v.platform === p && !ex.has(p + ":" + v.channel_id) && new Date(v.published_at) >= since).map((v) => v.views || 0);
-    const followers = rows.reduce((a, r) => a + (r.followers || 0), 0) || null;
+    const lv = liveOf(p);
+    const followers = lv?.followers ?? (rows.reduce((a, r) => a + (r.followers || 0), 0) || null);
     const h = getJSON("mystats", {})[p]?.h || [];
     const wk = h.filter((x) => x.d <= vnDay(Date.now() - 7 * 864e5)).pop() || h[0];
     const best = [...v30].sort((a, b) => (b.views || 0) - (a.views || 0))[0];
     return {
-      rows, followers, fDelta: followers != null && wk && wk.d !== vnDay(Date.now()) ? followers - wk.f : null, fHist: h.map((x) => x.f),
+      rows, followers, lv, fDelta: lv?.d7 != null ? lv.d7 : followers != null && wk && wk.d !== vnDay(Date.now()) ? followers - wk.f : null, fHist: h.map((x) => x.f),
       n30: v30.length, sumV, med: median(views), eng: sumV ? (eng / sumV) * 100 : 0, nicheMed: median(niche), best, recent: all.slice(-12), last: all[all.length - 1],
     };
   }
@@ -579,7 +583,7 @@
 
   function renderMine() {
     if (!state.d) return;
-    $("#mine-note").textContent = "YouTube, TikTok tự cập nhật mỗi sáng 6:00 · Facebook nhập tay";
+    $("#mine-note").textContent = "Đã kết nối: cập nhật 15 phút/lần · Chưa kết nối: quét số công khai lúc 6:00";
     const panel = (p) => {
       const s = mineStats(p), P = PL[p];
       const head = `<div class="ph"><h3 style="display:flex;align-items:center;gap:10px"><span class="ico" style="background:${P.c}22;color:${P.c}">${P.ico}</span>${P.n}</h3>`;
@@ -588,7 +592,7 @@
         <div class="row"><input id="mine-in-${p}" placeholder="${p === "youtube" ? "@tenkenh hoặc link kênh YouTube" : "@username TikTok"}" style="flex:1;min-width:180px"><button class="btn primary" data-mine-add="${p}">Liên kết</button></div></div>`;
       const vs = s.nicheMed ? s.med / s.nicheMed : 0;
       const maxV = Math.max(1, ...s.recent.map((v) => v.views || 0));
-      return `<div class="panel">${head}<span class="muted" style="font-size:12.5px">${s.rows.map((r) => r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.name || r.handle || r.channel_id)}</a>` : esc(r.handle || r.channel_id)).join(", ")}</span></div>
+      return `<div class="panel">${head}${conns()[p]?.connected ? `<span class="cst ok"><i></i>LIVE</span>` : ""}<span class="muted" style="font-size:12.5px">${s.rows.map((r) => r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.name || r.handle || r.channel_id)}</a>` : esc(r.handle || r.channel_id)).join(", ")}</span></div>
         <div class="bigf"><span class="num">${s.followers != null ? nf(s.followers) : "?"}</span> follow ${fDeltaTxt(s.fDelta)}</div>
         ${s.rows.some((r) => !r.channel_id) ? `<p class="muted" style="font-size:12.5px">Jarvis sẽ nhận diện kênh ở lần quét tới (6:00) hoặc khi anh bấm Quét số liệu ngay ở trang Đối thủ.</p>` : ""}
         <div class="sgrid">
@@ -603,7 +607,8 @@
         <div class="vbars">${s.recent.map((v) => `<a class="vb" href="${esc(v.url)}" target="_blank" rel="noopener" style="height:${Math.max(3, ((v.views || 0) / maxV) * 100)}%;background:${(v.views || 0) >= s.nicheMed ? "var(--g)" : "#3A4A61"}" data-tip="${esc((v.title || "").slice(0, 70))} · ${nf(v.views)} view · ${durTxt(v.duration_s)}"></a>`).join("")}</div>
         <p class="muted" style="font-size:12px;margin:6px 0 0">Cột xanh: video vượt trung vị ngách (${short(s.nicheMed)} view).</p>` : `<p class="muted">Chưa có video nào trong dữ liệu quét.</p>`}
         ${s.best ? `<p style="margin:12px 0 0;font-size:13px"><span class="muted">Video tốt nhất 30 ngày:</span> <a href="${esc(s.best.url)}" target="_blank" rel="noopener">${esc((s.best.title || "").slice(0, 80))}</a> · <b>${nf(s.best.views)}</b> view</p>` : ""}
-        <div class="row"><button class="btn sm danger" data-mine-unlink="${p}">Bỏ liên kết</button></div></div>`;
+        ${p === "youtube" ? ytDeepHtml(s.lv?.deep) : ttDeepHtml(s.lv?.deep)}
+        ${conns()[p]?.connected ? "" : `<div class="row"><button class="btn sm danger" data-mine-unlink="${p}">Bỏ liên kết</button></div>`}</div>`;
     };
     const fb = fbStats();
     const fbPanel = `<div class="panel"><div class="ph"><h3 style="display:flex;align-items:center;gap:10px"><span class="ico" style="background:${PL.facebook.c}22;color:${PL.facebook.c}">${PL.facebook.ico}</span>Facebook</h3><button class="btn sm" id="fb-edit">Cập nhật số</button></div>
@@ -619,6 +624,7 @@
         </div>${x.hist.length > 1 ? `<div style="height:44px;margin-top:8px">${spark(x.hist, PL.facebook.c, 300, 44)}</div>` : ""}</div>`).join("")
         : `<div class="empty">Chưa có số. Bấm "Cập nhật số" để nhập cho 2 page.</div>`}</div>`;
     $("#mine-box").innerHTML = panel("youtube") + panel("tiktok") + fbPanel;
+    $("#conn-box").innerHTML = connCards();
   }
 
   function openFB() {
@@ -833,6 +839,146 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
     return false;
   }
 
+  // ======================= KẾT NỐI TÀI KHOẢN =======================
+  state.live = {};
+  async function loadLive() {
+    const since = new Date(Date.now() - 31 * 864e5).toISOString();
+    const { data } = await sb.from("platform_stats").select("platform,account,at,followers,views,videos,likes,extra").gte("at", since).order("at", { ascending: true }).limit(5000);
+    const by = {};
+    for (const r of data || []) (by[r.platform] ||= []).push(r);
+    state.live = by;
+  }
+  const liveOf = (p) => {
+    const rows = state.live[p] || []; if (!rows.length) return null;
+    const last = rows[rows.length - 1];
+    const at = (ms) => rows.filter((r) => new Date(r.at) <= Date.now() - ms).pop();
+    const d1 = at(864e5), d7 = at(7 * 864e5);
+    const deep = [...rows].reverse().find((r) => r.extra);
+    // gộp nhiều page Facebook: lấy bản mới nhất của từng tài khoản
+    let followers = last.followers;
+    if (p === "facebook") { const acc = {}; rows.forEach((r) => (acc[r.account] = r)); followers = Object.values(acc).reduce((a, r) => a + (r.followers || 0), 0); }
+    return { last, followers, d1: d1 && last.followers != null ? last.followers - d1.followers : null, d7: d7 && last.followers != null ? last.followers - d7.followers : null, deep: deep?.extra, hist: rows.map((r) => r.followers || 0) };
+  };
+  const conns = () => getJSON("connections", {});
+  const agoTxt = (iso) => { if (!iso) return "chưa"; const m = Math.round((Date.now() - new Date(iso)) / 60000); return m < 1 ? "vừa xong" : m < 60 ? `${m} phút trước` : m < 1440 ? `${Math.round(m / 60)} giờ trước` : fmt(iso); };
+
+  function connCards() {
+    const c = conns();
+    return `<div class="panel conn"><div class="ph"><h3>Kết nối tài khoản</h3><span class="muted" style="font-size:12px">Số liệu cập nhật mỗi 15 phút, kể cả khi tắt máy</span></div>
+      <div class="conn-grid">${["youtube", "tiktok", "facebook"].map((p) => {
+        const x = c[p] || {}, P = PL[p];
+        const st = x.connected ? (x.error ? `<span class="cst bad">Lỗi: ${esc(x.error.slice(0, 90))}</span>` : `<span class="cst ok"><i></i>LIVE · ${agoTxt(x.last_sync)}</span>`) : `<span class="cst">Chưa kết nối</span>`;
+        return `<div class="conn-c"><div class="conn-h"><span class="ico" style="background:${P.c}22;color:${P.c}">${P.ico}</span><b>${P.n}</b></div>
+          ${st}${x.account ? `<span class="muted" style="font-size:12.5px">${esc(x.account)}</span>` : ""}
+          <span class="muted" style="font-size:12px">${p === "youtube" ? "Sub, view, giờ xem, % giữ chân, nguồn traffic" : p === "tiktok" ? "Follow, tim, view từng video, chia sẻ" : "Follow, lượt xem, tương tác, bài đăng của 2 page"}</span>
+          <div class="row" style="margin-top:6px">${x.connected
+            ? `<button class="btn sm" data-csync="${p}">Cập nhật ngay</button><button class="btn sm" data-cstart="${p}">Kết nối lại</button><button class="btn sm danger" data-cdis="${p}">Ngắt</button>`
+            : `<button class="btn sm primary" data-cstart="${p}">Kết nối ${P.n}</button>`}</div></div>`;
+      }).join("")}</div></div>`;
+  }
+
+  const REDIRECT = (p) => `${cfg.url}/functions/v1/jarvis-runner/oauth/${p}`;
+  function setupGuide(p, err) {
+    const r = REDIRECT(p);
+    const G = {
+      youtube: `**Cần làm 1 lần (khoảng 5 phút) trên Google Cloud, cùng project đã tạo API key YouTube:**
+
+1. Vào console.cloud.google.com › **APIs & Services › Library**, bật **YouTube Analytics API** (YouTube Data API đã bật sẵn).
+2. **OAuth consent screen** (Google Auth Platform): User type **External**, tên app "Jarvis", email của anh. Ở mục **Audience** bấm **Publish app** để token không hết hạn sau 7 ngày.
+3. **Credentials › Create credentials › OAuth client ID** › loại **Web application** › Authorized redirect URIs dán:
+${r}
+4. Copy **Client ID**, dán vào ô Client ID Google bên dưới rồi bấm Lưu.
+5. Copy **Client secret**, tự dán vào Supabase › Edge Functions › **Secrets** với tên **GOOGLE_CLIENT_SECRET** (không dán vào chat hay vào app).
+6. Quay lại đây bấm **Kết nối YouTube**. Google báo "ứng dụng chưa xác minh" thì bấm Nâng cao › Tiếp tục (app của chính anh).`,
+      facebook: `**Cần làm 1 lần (khoảng 7 phút) trên Meta for Developers:**
+
+1. Vào developers.facebook.com › **My Apps › Create app**. Tên "Jarvis", use case chọn **Manage everything on your Page** (quản lý Trang).
+2. Trong app: **Facebook Login for Business › Settings** › Valid OAuth Redirect URIs dán:
+${r}
+3. Ở mục quyền (Permissions), đảm bảo có **pages_show_list, pages_read_engagement, read_insights**. App để chế độ Development là được vì anh là admin.
+4. **App settings › Basic**: copy **App ID** dán vào ô App ID Meta bên dưới rồi bấm Lưu.
+5. Copy **App secret**, tự dán vào Supabase › Edge Functions › **Secrets** tên **META_APP_SECRET**.
+6. Bấm **Kết nối Facebook**, đăng nhập và **tích chọn cả 2 page** Chuyện của Thắng.`,
+      tiktok: `**Cần làm 1 lần (khoảng 7 phút) trên TikTok for Developers:**
+
+1. Vào developers.tiktok.com, đăng nhập bằng TikTok của kênh › **Manage apps › Connect an app**.
+2. Chuyển app sang **Sandbox** (không cần TikTok duyệt). Trong Sandbox › **Target users** thêm tài khoản TikTok của kênh.
+3. **Add products › Login Kit**, Redirect URI (Web) dán:
+${r}
+4. **Scopes**: thêm user.info.basic, user.info.profile, user.info.stats, video.list.
+5. Copy **Client key** dán vào ô Client key TikTok bên dưới rồi bấm Lưu.
+6. Copy **Client secret**, tự dán vào Supabase › Edge Functions › **Secrets** tên **TIKTOK_CLIENT_SECRET**.
+7. Bấm **Kết nối TikTok** và đăng nhập đúng tài khoản kênh.`,
+    };
+    const ids = getJSON("oauth_clients", {});
+    const key = { youtube: "google_client_id", facebook: "meta_app_id", tiktok: "tiktok_client_key" }[p];
+    const lbl = { youtube: "Client ID Google", facebook: "App ID Meta", tiktok: "Client key TikTok" }[p];
+    $("#detail-title").textContent = `Kết nối ${PL[p].n}`;
+    $("#detail-body").innerHTML = (err ? `<p class="err" style="white-space:normal">${esc(err)}</p>` : "") + md(G[p]) +
+      `<div class="row" style="white-space:normal"><button class="btn sm" data-copy="${esc(r)}">Copy Redirect URI</button></div>
+       <label style="margin-top:12px">${lbl} (không phải secret)<input id="cid-in" value="${esc(ids[key] || "")}" autocomplete="off"></label>`;
+    $("#detail-actions").innerHTML = `<button class="btn" id="cid-save" data-ckey="${key}" data-p="${p}">Lưu</button><button class="btn primary" data-cstart="${p}" data-force="1">Kết nối ${PL[p].n}</button>`;
+    if (!$("#detail").open) $("#detail").showModal();
+  }
+
+  async function connClick(el) {
+    const ds = el.dataset;
+    if (ds.cstart) {
+      el.disabled = true;
+      try {
+        const r = await callRunner({ oauth_start: ds.cstart });
+        if (r.url) { if (/Electron/i.test(navigator.userAgent)) window.open(r.url, "_blank"); else location.href = r.url; }
+        else setupGuide(ds.cstart, r.error);
+      } catch (e) { setupGuide(ds.cstart, String(e.message || e)); }
+      el.disabled = false; return true;
+    }
+    if (ds.csync) {
+      el.disabled = true; el.textContent = "Đang cập nhật…";
+      try { await callRunner({ live_sync: ds.csync }); } catch (e) { alertBox("Không cập nhật được", String(e.message || e)); }
+      await refreshAll(); await loadLive(); await loadDash(); renderMine(); return true;
+    }
+    if (ds.cdis) { await callRunner({ oauth_disconnect: ds.cdis }); await refreshAll(); renderMine(); return true; }
+    if (el.id === "cid-save") {
+      const ids = getJSON("oauth_clients", {}); ids[ds.ckey] = $("#cid-in").value.trim();
+      await saveJSON("oauth_clients", ids); el.textContent = "Đã lưu"; return true;
+    }
+    if (ds.copy) { try { await navigator.clipboard.writeText(ds.copy); el.textContent = "Đã copy"; } catch { el.textContent = ds.copy; } return true; }
+    return false;
+  }
+
+  // YouTube Analytics (khi đã kết nối)
+  function ytDeepHtml(dp) {
+    if (!dp?.totals) return "";
+    const t = dp.totals, net = (t.subscribersGained || 0) - (t.subscribersLost || 0);
+    const TR = { YT_SEARCH: "Tìm kiếm YouTube", SUGGESTED: "Video đề xuất", BROWSE_FEATURES: "Trang chủ / Browse", SHORTS: "Shorts feed", EXT_URL: "Link bên ngoài", PLAYLIST: "Playlist", CHANNEL: "Trang kênh", NOTIFICATION: "Thông báo", SUBSCRIBER: "Người đăng ký", NO_LINK_OTHER: "Trực tiếp / khác", RELATED_VIDEO: "Video liên quan", END_SCREEN: "Màn hình kết thúc", YT_OTHER_PAGE: "Trang YouTube khác", HASHTAGS: "Hashtag" };
+    const trTot = (dp.traffic || []).reduce((a, r) => a + r[1], 0) || 1;
+    return `<h3 style="margin-top:16px">YouTube Analytics · 28 ngày</h3>
+      <div class="sgrid">
+        <div><span>Lượt xem</span><b>${short(t.views)}</b></div>
+        <div><span>Giờ xem</span><b>${short((t.estimatedMinutesWatched || 0) / 60)}</b></div>
+        <div><span>% xem trung bình</span><b>${dec(t.averageViewPercentage || 0, 1)}%</b></div>
+        <div><span>Thời lượng xem TB</span><b>${durTxt(Math.round(t.averageViewDuration || 0))}</b></div>
+        <div><span>Sub ròng</span><b class="${net >= 0 ? "up" : "down"}">${net >= 0 ? "+" : ""}${nf(net)}</b></div>
+        <div><span>Like · bình luận</span><b>${short(t.likes)} · ${short(t.comments)}</b></div>
+      </div>
+      ${dp.top?.length ? `<h3 style="margin-top:14px">Video theo % giữ chân</h3><div class="ret">${dp.top.slice(0, 6).map((v) => `<div class="r"><span title="${esc(v.title)}">${esc((v.title || "").slice(0, 46))}</span><span class="track"><i style="width:${Math.min(100, v.avgPct || 0)}%;background:${(v.avgPct || 0) >= 40 ? "var(--g)" : (v.avgPct || 0) >= 25 ? "var(--amber)" : "var(--err)"}"></i></span><b>${dec(v.avgPct || 0, 0)}%</b><small>${short(v.views)} view</small></div>`).join("")}</div>` : ""}
+      ${dp.traffic?.length ? `<h3 style="margin-top:14px">Nguồn lượt xem</h3><div class="hb">${dp.traffic.slice(0, 5).map((r) => `<div class="r"><span>${TR[r[0]] || r[0]}</span><span class="track"><i style="width:${(r[1] / trTot) * 100}%"></i></span><b>${Math.round((r[1] / trTot) * 100)}%</b></div>`).join("")}</div>` : ""}`;
+  }
+  function ttDeepHtml(dp) {
+    if (!dp?.videos?.length) return "";
+    const vs = dp.videos.slice(0, 8);
+    return `<h3 style="margin-top:16px">Video TikTok gần nhất (từ tài khoản)</h3><div class="list">${vs.map((v) => `<a class="card ttv" href="${esc(v.url || "#")}" target="_blank" rel="noopener"><div class="body"><span class="title" style="font-size:13.5px">${esc((v.title || "(không tiêu đề)").slice(0, 80))}</span>
+      <span class="meta"><b style="color:var(--text)">${short(v.views)}</b> view · ${short(v.likes)} tim · ${short(v.comments)} bình luận · ${short(v.shares)} chia sẻ · ${durTxt(v.dur)}</span></div></a>`).join("")}</div>`;
+  }
+
+  function handleConnHash() {
+    const m = location.hash.match(/^#ket-noi-(youtube|tiktok|facebook)-(ok|loi)$/);
+    if (!m) return;
+    history.replaceState(null, "", location.pathname);
+    showView("mine");
+    if (m[2] === "ok") alertBox(`Đã kết nối ${PL[m[1]].n}`, "Jarvis đã lấy số liệu lần đầu và sẽ cập nhật mỗi 15 phút, kể cả khi anh tắt máy.");
+  }
+
   // ---- chỉnh số phút ----
   function openMinutes() {
     const m = minutesMap();
@@ -920,6 +1066,7 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
     const el = e.target.closest("button");
     if (!el) return;
 
+    if (await connClick(el)) return;
     if (await extraClick(el)) return;
     if (el.dataset.view) return showView(el.dataset.view);
     if (el.dataset.go) return showView(el.dataset.go);
