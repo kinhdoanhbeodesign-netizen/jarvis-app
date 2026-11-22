@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src https://*.supabase.co wss://*.supabase.co; img-src 'self' data:; manifest-src 'self'; worker-src 'self'">
+<meta name="theme-color" content="#0A111C">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Jarvis">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<title>Jarvis – Chuyện của Thắng</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ĐĂNG NHẬP -->
+<section id="login" class="login hidden">
+  <div class="login-card">
+    <div class="brand"><img src="icons/icon-192.png" alt="" class="logo-img"><div><b>JARVIS <span class="os">OS</span></b><small>Chuyện của Thắng</small></div></div>
+    <label>Email<input id="login-email" type="email" autocomplete="username" inputmode="email"></label>
+    <label>Mật khẩu<input id="login-pass" type="password" autocomplete="current-password"></label>
+    <button id="login-btn" class="btn primary">Đăng nhập</button>
+    <p id="login-err" class="err"></p>
+    <details class="srv"><summary>Máy chủ</summary>
+      <label>Project URL<input id="cfg-url" placeholder="https://xxxx.supabase.co" autocomplete="off"></label>
+      <label>Publishable key<input id="cfg-key" placeholder="sb_publishable_..." autocomplete="off"></label>
+    </details>
+  </div>
+</section>
+
+<div id="app" class="layout hidden">
+  <!-- Sidebar chính (máy tính) -->
+  <nav class="side" aria-label="Điều hướng chính">
+    <div class="brand"><img src="icons/icon-192.png" alt="" class="logo-img"><div><b>JARVIS <span class="os">OS</span></b><small>Chuyện của Thắng</small></div></div>
+    <button class="nav" data-view="dash"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Tổng quan</button>
+    <div class="nav-group">Kênh của tôi</div>
+    <button class="nav" data-view="mine"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 9.5v5l4.5-2.5z"/></svg>Chỉ số nền tảng</button>
+    <button class="nav" data-view="goals"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg>Mục tiêu tuần</button>
+    <button class="nav" data-view="hot"><svg viewBox="0 0 24 24"><path d="M12 3c1 4 5 5.5 5 10a5 5 0 0 1-10 0c0-2.5 1.5-3.5 2-5 1 1.5 2 2 2.5 2C11 8 11 5.5 12 3z"/></svg>Video hot nên làm</button>
+    <div class="nav-group">Việc</div>
+    <button class="nav" data-view="tasks"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/></svg>Nhiệm vụ</button>
+    <button class="nav" data-view="inbox"><svg viewBox="0 0 24 24"><path d="M3 13h5l2 3h4l2-3h5M5 5h14l2 8v6H3v-6z"/></svg>Hộp duyệt <span class="pill badge-inbox hidden">0</span></button>
+    <button class="nav" data-view="log"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h7"/></svg>Báo cáo &amp; Nhật ký</button>
+    <div class="nav-group">Dữ liệu</div>
+    <button class="nav" data-view="comp"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.5-4.5"/></svg>Đối thủ &amp; Số liệu</button>
+    <button class="nav" data-view="brain"><svg viewBox="0 0 24 24"><path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 6 1V5a3 3 0 0 0-3-1zM15 4a3 3 0 0 1 3 3 3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-6 1"/></svg>Bộ não</button>
+    <div class="ai-card" id="ai-card"></div>
+    <div class="side-foot">
+      <button class="nav" data-view="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z"/></svg>Cài đặt</button>
+      <span class="ver">v0.4.0 · by Jarvis</span>
+    </div>
+  </nav>
+
+  <div class="shell">
+    <header class="topbar">
+      <div class="chip-brain"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><b>Chuyện của Thắng</b><span class="muted" id="top-clock"></span></div>
+      <div class="top-actions">
+        <button class="btn notif" data-go="inbox"><svg viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0"/></svg><span class="lbl">Thông báo</span><span class="pill badge-inbox hidden">0</span></button>
+        <button class="btn" id="install"><svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg><span class="lbl">Mở như app</span></button>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <main class="main">
+        <!-- TỔNG QUAN / THỐNG KÊ -->
+        <section id="view-dash" class="view">
+          <header class="head"><h1>Dashboard</h1><span class="muted" id="dash-upd"></span></header>
+          <div id="dash"></div>
+        </section>
+
+
+        <!-- KÊNH CỦA TÔI -->
+        <section id="view-mine" class="view hidden">
+          <header class="head"><h1>Chỉ số kênh của tôi</h1><span class="muted" id="mine-note"></span></header>
+          <div id="mine-box" class="grid mine-grid"></div>
+        </section>
+
+        <!-- MỤC TIÊU TUẦN -->
+        <section id="view-goals" class="view hidden">
+          <header class="head"><h1>Mục tiêu tuần</h1>
+            <div class="weeknav"><button class="btn sm" data-wk="-1" aria-label="Tuần trước">‹</button><b id="wk-label"></b><button class="btn sm" data-wk="1" aria-label="Tuần sau">›</button></div>
+          </header>
+          <div id="goals-box"></div>
+        </section>
+
+        <!-- VIDEO HOT -->
+        <section id="view-hot" class="view hidden">
+          <header class="head"><h1>Video hot nên làm</h1>
+            <div class="tabs"><button class="tab active" data-hotp="all">Tất cả</button><button class="tab" data-hotp="tiktok">TikTok</button><button class="tab" data-hotp="youtube">YouTube</button></div>
+          </header>
+          <p class="muted" style="margin-top:-6px">Video trong ngách đang ăn view nhất 21 ngày qua, xếp theo lượt xem mỗi ngày (số liệu thật). Bấm <b>Làm video này</b> để Jarvis viết kịch bản phiên bản Chuyện của Thắng.</p>
+          <div id="hot-ideas"></div>
+          <div id="hot-list" class="list"></div>
+        </section>
+
+        <!-- NHIỆM VỤ -->
+        <section id="view-tasks" class="view hidden">
+          <header class="head"><h1 id="tasks-title">Nhiệm vụ</h1>
+            <div class="autopilot"><span>AI tự vận hành</span><button class="switch" id="autopilot" aria-pressed="true" aria-label="AI tự vận hành"><span class="knob"></span></button></div>
+          </header>
+          <div id="task-chips" class="chips"></div>
+          <div id="assist-chips" class="chips"></div>
+          <div id="inbox-banner" class="banner hidden"></div>
+          <div id="task-list" class="list"></div>
+        </section>
+
+        <!-- HỘP DUYỆT -->
+        <section id="view-inbox" class="view hidden">
+          <header class="head"><h1>Hộp duyệt</h1>
+            <div class="row" style="margin:0">
+              <button class="btn primary" id="new-idea">+ Ý tưởng của tôi</button>
+              <div class="tabs"><button class="tab active" data-inbox="pending">Chờ duyệt</button><button class="tab" data-inbox="done">Đã xử lý</button></div>
+            </div>
+          </header>
+          <div id="inbox-list" class="list"></div>
+        </section>
+
+        <!-- NHẬT KÝ -->
+        <section id="view-log" class="view hidden">
+          <header class="head"><h1>Báo cáo &amp; Nhật ký</h1>
+            <div class="tabs"><button class="tab active" data-logf="all">Tất cả</button><button class="tab" data-logf="report">Báo cáo</button><button class="tab" data-logf="error">Lỗi</button></div>
+          </header>
+          <div id="log-list" class="list"></div>
+        </section>
+
+        <!-- ĐỐI THỦ -->
+        <section id="view-comp" class="view hidden">
+          <header class="head"><h1>Đối thủ &amp; Số liệu</h1>
+            <div class="row" style="margin:0">
+              <button class="btn primary" id="scan-now">Quét số liệu ngay</button>
+              <div class="tabs"><button class="tab active" data-plat="youtube">YouTube</button><button class="tab" data-plat="tiktok">TikTok</button></div>
+            </div>
+          </header>
+          <p class="muted">Jarvis tự thêm kênh xuất hiện từ 2 lần trong top video ngách. Ghim kênh muốn theo dõi sát, bấm Bỏ qua với kênh không liên quan.</p>
+          <div class="card col" style="align-items:stretch">
+            <b>Thêm kênh đối thủ</b>
+            <div class="row" style="margin-top:4px">
+              <input id="comp-input" placeholder="YouTube: @tenkenh hoặc link · TikTok: @username" style="flex:1;min-width:200px">
+              <button class="btn" id="comp-add">Thêm &amp; ghim</button>
+            </div>
+          </div>
+          <h2 class="sec">Kênh đối thủ</h2>
+          <div id="comp-list" class="list"></div>
+          <h2 class="sec">Video nổi bật (số liệu thật)</h2>
+          <div id="vid-list" class="list"></div>
+        </section>
+
+        <!-- BỘ NÃO -->
+        <section id="view-brain" class="view hidden">
+          <header class="head"><h1>Bộ não</h1></header>
+          <p class="muted">Mọi trợ lý đọc phần này trước khi làm việc: định vị kênh, khán giả, quy tắc, đối thủ.</p>
+          <label>Hồ sơ kênh<textarea id="brain-text" rows="12"></textarea></label>
+          <label style="margin-top:16px">Từ khóa quét số liệu (mỗi dòng 1 từ khóa, tối đa 6 cho YouTube, 4 cho TikTok)<textarea id="kw-text" rows="6"></textarea></label>
+          <label style="margin-top:16px">Quy tắc biên kịch (giọng anh Thắng, gói kịch bản)<textarea id="rules-text" rows="12"></textarea></label>
+          <div class="row"><button id="brain-save" class="btn primary">Lưu Bộ não</button><span id="brain-msg" class="muted"></span></div>
+        </section>
+
+        <!-- CÀI ĐẶT -->
+        <section id="view-settings" class="view hidden">
+          <header class="head"><h1>Cài đặt</h1></header>
+          <div class="card col" style="align-items:stretch">
+            <p style="margin:0">Đang kết nối: <b id="set-url"></b></p>
+            <p style="margin:0">Tài khoản: <b id="set-user"></b></p>
+            <div class="row"><button id="logout" class="btn">Đăng xuất</button><button id="reset" class="btn">Đổi máy chủ</button></div>
+          </div>
+        </section>
+
+        <!-- MENU (điện thoại) -->
+        <section id="view-more" class="view hidden">
+          <header class="head"><h1>Menu</h1></header>
+          <div class="list">
+            <button class="card menu-i" data-view="mine">Chỉ số kênh của tôi<span class="muted">YouTube, TikTok, Facebook</span></button>
+            <button class="card menu-i" data-view="tasks">Nhiệm vụ<span class="muted">Lịch chạy tự động, chạy ngay, bật/tắt</span></button>
+            <button class="card menu-i" data-view="comp">Đối thủ &amp; Số liệu<span class="muted">Kênh đối thủ, video nổi bật</span></button>
+            <button class="card menu-i" data-view="log">Báo cáo &amp; Nhật ký<span class="muted">Báo cáo trưa, cảnh báo trend, lịch sử chạy</span></button>
+            <button class="card menu-i" data-view="brain">Bộ não<span class="muted">Hồ sơ kênh, từ khóa, quy tắc biên kịch</span></button>
+            <button class="card menu-i" data-view="settings">Cài đặt<span class="muted">Tài khoản, đăng xuất</span></button>
+            <div class="card autopilot"><span>AI tự vận hành</span><button class="switch" id="autopilot-m" aria-pressed="true" aria-label="AI tự vận hành"><span class="knob"></span></button></div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <!-- Thanh dưới (điện thoại) -->
+  <nav class="bottom" aria-label="Điều hướng">
+    <button data-view="dash"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Tổng quan</button>
+    <button data-view="goals"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg>Mục tiêu</button>
+    <button data-view="hot"><svg viewBox="0 0 24 24"><path d="M12 3c1 4 5 5.5 5 10a5 5 0 0 1-10 0c0-2.5 1.5-3.5 2-5 1 1.5 2 2 2.5 2C11 8 11 5.5 12 3z"/></svg>Video hot</button>
+    <button data-view="inbox"><svg viewBox="0 0 24 24"><path d="M3 13h5l2 3h4l2-3h5M5 5h14l2 8v6H3v-6z"/></svg>Duyệt<span class="dot badge-inbox hidden">0</span></button>
+    <button data-view="more"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>Menu</button>
+  </nav>
+</div>
+
+<div id="tip" class="tip hidden" role="tooltip"></div>
+
+<dialog id="detail">
+  <div class="dlg-head"><h2 id="detail-title"></h2><button id="detail-close" class="btn" aria-label="Đóng">Đóng</button></div>
+  <div id="detail-body" class="md"></div>
+  <div id="detail-actions" class="row"></div>
+</dialog>
+
+<script src="config.js"></script>
+<script src="vendor/supabase.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
