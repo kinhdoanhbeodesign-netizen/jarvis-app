@@ -112,7 +112,7 @@
       sb.from("tasks").select("*").order("id"),
       sb.from("approvals").select("*").order("created_at", { ascending: false }).limit(60),
       sb.from("runs").select("id,task_id,started_at,finished_at,status,output,error,tasks(title,kind)").order("started_at", { ascending: false }).limit(60),
-      sb.from("settings").select("key,value").in("key", ["autopilot", "autopilot_saved", "minutes", "goals", "mystats", "hot_hidden", "connections", "oauth_clients"]),
+      sb.from("settings").select("key,value").in("key", ["autopilot", "autopilot_saved", "minutes", "goals", "mystats", "hot_hidden", "connections", "oauth_clients", "weekly_plan"]),
     ]);
     state.tasks = t.data ?? []; state.approvals = a.data ?? []; state.runs = r.data ?? [];
     state.settings = Object.fromEntries((st.data ?? []).map((x) => [x.key, x.value]));
@@ -644,7 +644,9 @@
   }
 
   // ======================= MỤC TIÊU TUẦN =======================
-  state.wk = 0;
+  const isSunVN = () => new Date(new Date().toLocaleString("en-US", { timeZone: TZ })).getDay() === 0;
+  const baseWk = () => (isSunVN() ? 1 : 0);
+  state.wk = baseWk();
   function weekStart(off) {
     const d = new Date(new Date().toLocaleString("en-US", { timeZone: TZ }));
     d.setDate(d.getDate() - ((d.getDay() + 6) % 7) + off * 7);
@@ -682,7 +684,7 @@
       const p = gPct(g, k), d = gDone(g, k);
       return `<div class="grow ${g.checked || p >= 100 ? "done" : ""}">
         <button class="chk" data-gchk="${g.id}" aria-pressed="${!!g.checked}" aria-label="Đánh dấu xong">${g.checked ? '<svg viewBox="0 0 24 24"><path d="M5 12l5 5L19 7"/></svg>' : ""}</button>
-        <span class="gt">${esc(g.title)}${g.auto && !compact ? `<small>${AUTO[g.auto].replace("Tự đếm: ", "tự đếm ")}</small>` : ""}</span>
+        <span class="gt">${g.src === "ai" ? '<i class="aitag">AI</i>' : ""}${esc(g.title)}${g.auto && !compact ? `<small>${AUTO[g.auto].replace("Tự đếm: ", "tự đếm ")}</small>` : ""}${g.why && !compact ? `<em>${esc(g.why)}</em>` : ""}</span>
         ${compact ? "" : `<span class="gstep">${g.target ? `<button class="btn sm" data-gstep="${g.id}:-1" aria-label="Bớt">−</button><b class="num">${d}/${g.target}</b><button class="btn sm" data-gstep="${g.id}:1" aria-label="Thêm">+</button><small>${esc(g.unit || "")}</small>` : `<small class="muted">đánh dấu khi xong</small>`}</span>`}
         <span class="gp"><span class="track"><i style="width:${p}%;background:${p >= 100 ? "var(--g)" : p >= 50 ? "var(--blue)" : "var(--amber)"}"></i></span><b class="num">${p}%</b></span>
         ${compact ? "" : `<button class="btn sm danger gdel" data-gdel="${g.id}" aria-label="Xóa">✕</button>`}
@@ -693,9 +695,9 @@
 
   function renderGoals() {
     const k = weekStart(state.wk), list = goalsAll()[k] || [];
-    $("#wk-label").textContent = (state.wk === 0 ? "Tuần này · " : "") + wkLabel(k);
+    $("#wk-label").textContent = (state.wk === 0 ? "Tuần này · " : state.wk === 1 ? "Tuần sau · " : "") + wkLabel(k);
     const o = overall(list, k), done = list.filter((g) => gPct(g, k) >= 100).length;
-    $("#goals-box").innerHTML = `
+    $("#goals-box").innerHTML = planPanel(k) + `
       <div class="panel gsum"><div class="ring" style="--p:${o}"><b class="num">${o}%</b></div>
         <div><b style="font-size:17px">${list.length ? `${done}/${list.length} mục tiêu đã xong` : "Chưa có mục tiêu tuần này"}</b>
         <p class="muted" style="margin:4px 0 0">% hoàn thành = số đã làm ÷ chỉ tiêu. Mục có "tự đếm" sẽ tự cập nhật từ số liệu kênh và Jarvis.</p></div></div>
@@ -713,12 +715,49 @@
   }
   function renderGoalMini() {
     const box = $("#goal-mini"); if (!box) return;
-    const k = weekStart(0), list = goalsAll()[k] || [];
+    const k = weekStart(baseWk()), list = goalsAll()[k] || [];
     if (!list.length) return (box.innerHTML = `<div class="empty" style="padding:20px">Chưa đặt mục tiêu tuần này. <a href="#" data-go="goals">Đặt ngay</a></div>`);
     const o = overall(list, k);
     box.innerHTML = `<div class="gmini-top"><div class="ring sm" style="--p:${o}"><b class="num">${o}%</b></div><span class="muted">${wkLabel(k)} · ${list.filter((g) => gPct(g, k) >= 100).length}/${list.length} xong</span></div>` + goalRows(list.slice(0, 6), k, true);
   }
 
+
+  // Kế hoạch nội dung Jarvis đề xuất cho tuần
+  const PLN = { tiktok: "TikTok", youtube: "YouTube", youtube_shorts: "Shorts", facebook: "Facebook" };
+  function planPanel(k) {
+    const p = getJSON("weekly_plan", {})[k];
+    const task = state.tasks.find((t) => t.kind === "weekly_goals");
+    const running = task?.last_status === "running";
+    const btn = task ? `<button class="btn ${p ? "sm" : "primary"}" data-run="${task.id}" ${running ? "disabled" : ""}>${running ? "Jarvis đang lập kế hoạch… (1–2 phút)" : p ? "Lập lại" : "Jarvis lập kế hoạch tuần này"}</button>` : "";
+    if (!p) return `<div class="panel plan"><div class="ph"><h3>Kế hoạch Jarvis đề xuất</h3>${btn}</div>
+      <p class="muted" style="margin:0">Jarvis đọc số liệu thật của kênh anh, của ngách và trend tuần này để đề xuất 5–7 video dễ lên xu hướng, rồi tự tạo mục tiêu tuần bên dưới. Tự chạy mỗi tối Chủ nhật lúc 20:30.</p></div>`;
+    return `<div class="panel plan"><div class="ph"><h3>Kế hoạch Jarvis đề xuất · ${fmt(p.at)}</h3>${btn}</div>
+      <p class="plan-sum">${esc(p.summary)}</p>
+      <div class="plan-grid">${(p.content || []).map((c, i) => `<div class="pc">
+        <div class="pc-h"><span class="tag" style="color:${PL[c.platform === "youtube_shorts" ? "youtube" : c.platform]?.c || "inherit"}">${PLN[c.platform] || esc(c.platform)}</span><span class="muted">${esc(c.day || "")} · ${esc(c.duration || "")}</span></div>
+        <b>${esc(c.title)}</b>
+        ${c.hook ? `<span class="pc-hook">“${esc(c.hook)}”</span>` : ""}
+        <span class="muted pc-why">${esc(c.why || "")}</span>
+        <div class="pc-f"><span class="muted">${esc(c.format || "")}${c.effort ? " · " + esc(c.effort) : ""}</span>
+          ${c.evidence && /^https?:/.test(c.evidence) ? `<a href="${esc(c.evidence)}" target="_blank" rel="noopener">Nguồn</a>` : ""}
+          <button class="btn sm primary" data-planmake="${k}:${i}">Làm video này</button></div>
+      </div>`).join("")}</div></div>`;
+  }
+  function openPlanMake(key) {
+    const [k, i] = key.split(":"); const c = getJSON("weekly_plan", {})[k]?.content?.[+i]; if (!c) return;
+    $("#detail-title").textContent = "Làm video theo kế hoạch tuần";
+    $("#detail-body").innerHTML = `<p class="muted" style="white-space:normal">Sửa phần trải nghiệm thật cho đúng rồi gửi. Jarvis sẽ viết kịch bản và đưa vào Hộp duyệt.</p><textarea id="idea-text" rows="11">Video theo kế hoạch tuần Jarvis đề xuất:
+- Tiêu đề: ${c.title}
+- Nền tảng: ${PLN[c.platform] || c.platform} · Độ dài: ${c.duration} · Đăng: ${c.day}
+- Định dạng: ${c.format}
+- Hook gợi ý: ${c.hook}
+- Vì sao làm: ${c.why}
+${c.evidence ? "- Nguồn tham khảo: " + c.evidence : ""}
+
+Trải nghiệm thật của mình (anh sửa lại): đã đi / đã dùng ... ; con số thật: ... km, ... tiền, ... giờ.</textarea>`;
+    $("#detail-actions").innerHTML = '<button class="btn primary" id="idea-send">Gửi cho Jarvis viết kịch bản</button>';
+    $("#detail").showModal();
+  }
   // ======================= VIDEO HOT =======================
   state.hotp = "all";
   function hotList(p) {
@@ -813,7 +852,7 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
     if (ds.wk) { state.wk += +ds.wk; renderGoals(); return true; }
     const k = weekStart(state.wk);
     if (ds.gchk || ds.gstep || ds.gdel) {
-      const isMini = !!el.closest("#goal-mini"); const key = isMini ? weekStart(0) : k;
+      const isMini = !!el.closest("#goal-mini"); const key = isMini ? weekStart(baseWk()) : k;
       const list = [...(goalsAll()[key] || [])];
       const id = (ds.gchk || ds.gstep || ds.gdel).split(":")[0];
       const g = list.find((x) => x.id === id); if (!g) return true;
@@ -835,6 +874,7 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
     }
     if (ds.hotp) { state.hotp = ds.hotp; $$("[data-hotp]").forEach((b) => b.classList.toggle("active", b === el)); renderHot(); return true; }
     if (ds.hotmake) { openHotMake(ds.hotmake); return true; }
+    if (ds.planmake) { openPlanMake(ds.planmake); return true; }
     if (ds.hothide) { const h = getJSON("hot_hidden", []); h.push(ds.hothide); await saveJSON("hot_hidden", h.slice(-500)); renderHot(); renderHotMini(); return true; }
     return false;
   }
@@ -1094,6 +1134,7 @@ ${r}
       const t = state.tasks.find((x) => x.id == el.dataset.run);
       t.last_status = "running"; renderTasks();
       try { await callRunner({ task_id: t.id }); } catch (err) { alertBox("Không chạy được", String(err.message || err)); }
+      if (t.kind === "weekly_goals") { renderGoals(); const iv = setInterval(async () => { await refreshAll(); if (state.view === "goals") renderGoals(); const tt = state.tasks.find((x) => x.id === t.id); if (tt?.last_status !== "running") { clearInterval(iv); renderGoalMini?.(); } }, 10000); }
       return refreshAll();
     }
     if (el.dataset.open) {

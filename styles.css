@@ -352,3 +352,18 @@ svg.area text,svg.donut text,svg.gauge text{stroke:none}
 .ret small{color:var(--muted);text-align:right}
 a.card.ttv{text-decoration:none;color:inherit;padding:10px 12px;background:#0A1220}
 @media (max-width:820px){ .conn-grid{grid-template-columns:minmax(0,1fr)} .ret .r{grid-template-columns:minmax(0,1fr) 70px 36px} .ret small{display:none} }
+/* kế hoạch tuần */
+.plan{margin-bottom:14px;background:linear-gradient(180deg,rgba(43,217,130,.06),transparent 40%),var(--card)}
+.plan-sum{margin:0 0 12px;color:var(--text2);line-height:1.55}
+.plan-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+.pc{background:#0A1220;border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.pc-h{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px}
+.pc b{font-size:14.5px;line-height:1.35}
+.pc-hook{font-size:13px;color:var(--g);font-style:italic}
+.pc-why{font-size:12.5px;line-height:1.45}
+.pc-f{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:auto;font-size:12px}
+.pc-f .btn{margin-left:auto}
+.aitag{font-style:normal;font-size:10px;font-weight:700;color:#04140C;background:var(--g);border-radius:5px;padding:1px 5px;margin-right:6px;vertical-align:1px}
+.gt em{font-style:normal;font-size:12px;color:var(--muted);line-height:1.4}
+.gt .aitag{align-self:flex-start}
+.plan .ph .btn{white-space:nowrap}
