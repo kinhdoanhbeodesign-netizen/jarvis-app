@@ -1012,11 +1012,13 @@ ${r}
   }
 
   function handleConnHash() {
-    const m = location.hash.match(/^#ket-noi-(youtube|tiktok|facebook)-(ok|loi)$/);
+    const m = location.hash.match(/^#ket-noi-(youtube|tiktok|facebook)-(ok|loi)(?:~(.*))?$/);
     if (!m) return;
     history.replaceState(null, "", location.pathname);
     showView("mine");
+    let msg = ""; try { msg = decodeURIComponent(m[3] || ""); } catch (e) { msg = ""; }
     if (m[2] === "ok") alertBox(`Đã kết nối ${PL[m[1]].n}`, "Jarvis đã lấy số liệu lần đầu và sẽ cập nhật mỗi 15 phút, kể cả khi anh tắt máy.");
+    else alertBox(`Chưa kết nối được ${PL[m[1]].n}`, msg || "Anh bấm Kết nối lại thử nhé.");
   }
 
   // ---- chỉnh số phút ----
