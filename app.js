@@ -278,7 +278,7 @@
       </div>
 
       <div class="panel features">
-        <div><svg viewBox="0 0 24 24"><path d="M3 20h18M6 16v-3M10 16V9M14 16v-5M18 16V6"/></svg>Số liệu thật<br>YouTube · TikTok</div>
+        <div><svg viewBox="0 0 24 24"><path d="M3 20h18M6 16v-3M10 16V9M14 16v-5M18 16V6"/></svg>Số liệu thật<br>YouTube · TikTok · Facebook</div>
         <div><svg viewBox="0 0 24 24"><path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 6 1V5a3 3 0 0 0-3-1zM15 4a3 3 0 0 1 3 3 3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-6 1"/></svg>AI phân tích<br>Claude Haiku</div>
         <div><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg>Duyệt trước<br>khi làm tiếp</div>
         <div><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3v9l7 4"/></svg>Chạy 24/7<br>trên cloud</div>
@@ -558,7 +558,9 @@
 
   function fbStats() {
     const fb = getJSON("mystats", {}).facebook || { pages: [] };
-    return fb.pages.map((pg) => { const h = pg.h || []; const l = h[h.length - 1], pv = h[h.length - 2]; return { name: pg.name, l, pv, hist: h.map((x) => x.f || 0) }; });
+    const all = fb.pages.map((pg) => { const h = pg.h || []; const l = h[h.length - 1], pv = h[h.length - 2]; return { name: pg.name, l, pv, hist: h.map((x) => x.f || 0), main: /chuy[eệ]n/i.test(pg.name || "") }; });
+    if (!all.some((x) => x.main)) all.forEach((x) => (x.main = true));
+    return all;
   }
 
   function renderMineMini() {
@@ -566,18 +568,19 @@
     const card = (p, body) => `<div class="panel kpi mini"><div class="top"><span class="ico" style="background:${PL[p].c}22;color:${PL[p].c}">${PL[p].ico}</span>${PL[p].n}</div>${body}</div>`;
     box.innerHTML = ["youtube", "tiktok"].map((p) => {
       const s = mineStats(p);
+      const lv = liveOf(p); if (s && lv?.followers != null) { s.followers = lv.followers; if (lv.d7 != null) s.fDelta = lv.d7; }
       if (!s) return card(p, `<p class="muted" style="margin:4px 0 0;font-size:13px">Chưa liên kết kênh.</p><button class="btn sm" data-view="mine">Liên kết kênh</button>`);
       return card(p, `<div class="v num">${s.followers != null ? nf(s.followers) : "?"}<small>follow</small></div>
         <div class="foot">${s.recent.length > 1 ? spark(s.recent.map((v) => v.views || 0), PL[p].c) : '<span class="spark"></span>'}${fDeltaTxt(s.fDelta)}</div>
         <span class="muted" style="font-size:12px">View TB 30 ngày <b style="color:var(--text)">${short(s.med)}</b> · ngách ${short(s.nicheMed)} · ${s.n30} video</span>`);
     }).join("") + (() => {
-      const pages = fbStats();
+      const allPg = fbStats(), pages = allPg.filter((x) => x.main), other = allPg.length - pages.length;
       if (!pages.length || !pages.some((x) => x.l)) return card("facebook", `<p class="muted" style="margin:4px 0 0;font-size:13px">Facebook chưa có API – nhập số tuần 1 lần.</p><button class="btn sm" id="fb-edit">Nhập số Facebook</button>`);
       const tot = pages.reduce((a, x) => a + (x.l?.f || 0), 0), totPv = pages.reduce((a, x) => a + (x.pv?.f || x.l?.f || 0), 0);
       const reach = pages.reduce((a, x) => a + (x.l?.reach || 0), 0);
-      return card("facebook", `<div class="v num">${nf(tot)}<small>follow · ${pages.length} page</small></div>
+      return card("facebook", `<div class="v num">${nf(tot)}<small>follow${pages.length > 1 ? ` · ${pages.length} page` : ""}</small></div>
         <div class="foot">${spark(pages[0].hist, PL.facebook.c)}<span class="delta ${tot - totPv > 0 ? "up" : tot - totPv < 0 ? "down" : "flat"}">${tot - totPv >= 0 ? "+" : ""}${nf(tot - totPv)} kỳ trước</span></div>
-        <span class="muted" style="font-size:12px">Tiếp cận 7 ngày <b style="color:var(--text)">${short(reach)}</b> · nhập ${fmt(pages[0].l?.at)}</span>`);
+        <span class="muted" style="font-size:12px">Tiếp cận 7 ngày <b style="color:var(--text)">${short(reach)}</b> ${pages[0].l?.at ? ` · ${getJSON("mystats", {}).facebook?.auto ? "cập nhật" : "nhập"} ${agoTxt(pages[0].l.at)}` : ""}${other ? ` · +${other} page khác` : ""}</span>`);
     })();
   }
 
@@ -611,8 +614,8 @@
         ${conns()[p]?.connected ? "" : `<div class="row"><button class="btn sm danger" data-mine-unlink="${p}">Bỏ liên kết</button></div>`}</div>`;
     };
     const fb = fbStats();
-    const fbPanel = `<div class="panel"><div class="ph"><h3 style="display:flex;align-items:center;gap:10px"><span class="ico" style="background:${PL.facebook.c}22;color:${PL.facebook.c}">${PL.facebook.ico}</span>Facebook</h3><button class="btn sm" id="fb-edit">Cập nhật số</button></div>
-      <p class="muted" style="font-size:12.5px;margin-top:0">${getJSON("mystats", {}).facebook?.auto ? "Tự cập nhật mỗi sáng 6:00 qua Meta API. Tiếp cận = số người xem nội dung 7 ngày." : "Chưa kết nối Meta API: tạm nhập số tay từ Meta Business Suite › Thông tin chi tiết (1 phút/tuần)."}</p>
+    const fbPanel = `<div class="panel"><div class="ph"><h3 style="display:flex;align-items:center;gap:10px"><span class="ico" style="background:${PL.facebook.c}22;color:${PL.facebook.c}">${PL.facebook.ico}</span>Facebook</h3>${getJSON("mystats", {}).facebook?.auto ? "" : `<button class="btn sm" id="fb-edit">Nhập số tay</button>`}</div>
+      <p class="muted" style="font-size:12.5px;margin-top:0">${getJSON("mystats", {}).facebook?.auto ? "Tự cập nhật qua Meta API (follow 15 phút/lần, tiếp cận và tương tác 3 giờ/lần). Tiếp cận = số người xem nội dung trong 7 ngày." : "Chưa kết nối Meta API: tạm nhập số tay từ Meta Business Suite › Thông tin chi tiết (1 phút/tuần)."}</p>
       ${fb.length && fb.some((x) => x.l) ? fb.map((x) => `<div class="fbp"><b>${esc(x.name)}</b>
         <div class="sgrid">
           <div><span>Follow</span><b>${nf(x.l?.f)}</b>${x.pv ? `<small class="${x.l.f - x.pv.f >= 0 ? "up" : "down"}">${x.l.f - x.pv.f >= 0 ? "+" : ""}${nf(x.l.f - x.pv.f)}</small>` : ""}</div>
@@ -821,7 +824,7 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
         }
         return pg;
       });
-      ms.facebook = { pages }; await saveJSON("mystats", ms);
+      ms.facebook = { ...(ms.facebook || {}), pages }; await saveJSON("mystats", ms);
       $("#detail").close(); renderMine(); renderMineMini(); return true;
     }
     if (ds.mineAdd) {
@@ -897,6 +900,7 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
     // gộp nhiều page Facebook: lấy bản mới nhất của từng tài khoản
     let followers = last.followers;
     if (p === "facebook") { const acc = {}; rows.forEach((r) => (acc[r.account] = r)); followers = Object.values(acc).reduce((a, r) => a + (r.followers || 0), 0); }
+    if (p === "facebook") return { last, followers, d1: null, d7: null, deep: deep?.extra, hist: rows.map((r) => r.followers || 0) };
     return { last, followers, d1: d1 && last.followers != null ? last.followers - d1.followers : null, d7: d7 && last.followers != null ? last.followers - d7.followers : null, deep: deep?.extra, hist: rows.map((r) => r.followers || 0) };
   };
   const conns = () => getJSON("connections", {});
@@ -974,10 +978,10 @@ ${r}
     }
     if (ds.csync) {
       el.disabled = true; el.textContent = "Đang cập nhật…";
-      try { await callRunner({ live_sync: ds.csync }); } catch (e) { alertBox("Không cập nhật được", String(e.message || e)); }
+      try { const r = await callRunner({ live_sync: ds.csync }); const bad = (r.out || []).find((x) => /lỗi|error/i.test(x)); if (bad) alertBox("Cập nhật chưa trọn", bad); } catch (e) { alertBox("Không cập nhật được", String(e.message || e)); }
       await refreshAll(); await loadLive(); await loadDash(); renderMine(); return true;
     }
-    if (ds.cdis) { await callRunner({ oauth_disconnect: ds.cdis }); await refreshAll(); renderMine(); return true; }
+    if (ds.cdis) { if (!confirm(`Ngắt kết nối ${PL[ds.cdis].n}? Jarvis sẽ ngừng lấy số liệu trực tiếp cho đến khi anh kết nối lại.`)) return true; await callRunner({ oauth_disconnect: ds.cdis }); await refreshAll(); renderMine(); return true; }
     if (el.id === "cid-save") {
       const ids = getJSON("oauth_clients", {}); ids[ds.ckey] = $("#cid-in").value.trim();
       await saveJSON("oauth_clients", ids); el.textContent = "Đã lưu"; return true;
@@ -1061,7 +1065,7 @@ ${r}
     }).join("") + `<button class="chip" data-view="log">Nhật ký</button>`;
     const asst = {};
     state.tasks.forEach((t) => (asst[t.assistant] = (asst[t.assistant] || 0) + 1));
-    $("#assist-chips").innerHTML = `<span class="muted" style="font-size:12px;align-self:center;letter-spacing:1px">TRỢ LÝ</span>` +
+    $("#assist-chips").innerHTML = `<span class="muted" style="font-size:12px;align-self:center;letter-spacing:1px;white-space:nowrap">TRỢ LÝ</span>` +
       Object.entries(asst).map(([a, n]) => `<button class="chip ${state.assist === a ? "active" : ""}" data-assist="${esc(a)}">${esc(a)} <b>${n}</b></button>`).join("");
 
     let list = state.tasks.filter((t) => filt(state.filter, t));
@@ -1221,7 +1225,7 @@ ${r}
 
   // ======================= HỘP DUYỆT =======================
   function renderInbox() {
-    const active = ["pending", "queued", "writing"];
+    const active = ["pending", "queued", "writing", "error"];
     const list = state.approvals.filter((a) => (state.inbox === "pending" ? active.includes(a.status) : !active.includes(a.status)));
     const KIND = { ideas: "Ý tưởng", script: "Kịch bản" };
     const ST = { approved: ["Đã duyệt", "status-ok"], rejected: ["Từ chối", "status-error"], revise: ["Đang yêu cầu sửa", "muted"], revised: ["Đã có bản sửa", "muted"], error: ["Lỗi – bấm Xem để thử lại", "status-error"] };
