@@ -954,6 +954,10 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
       return `Đọc skill quy-dinh-dung-video rồi dùng skill roadtrip-edit (${mode}) dựng video "${p.title}". ${loc}/${p.vtype === "roadtrip_long" ? "roadtrip video ngang" : "roadtrip video dọc"}. Lập bảng dựng cho tôi duyệt trước, rồi dựng vào CapCut và báo tên project.${script}`;
     }
     if (p.stage === "duyet") return `Dùng skill duyet-video-roadtrip duyệt bản dựng video "${p.title}" (${VT[p.vtype]?.[0] || p.vtype}, ${mode})${p.output_url ? `, bản xuất: ${p.output_url}` : ""}. Lập biên bản lỗi có mốc thời gian, kết luận đăng được chưa.`;
+    if (p.stage === "len_lich" || p.stage === "da_dang") {
+      const pk = p.package?.text ? `\n\nGói đăng (tiêu đề, mô tả, hashtag theo từng nền tảng):\n${p.package.text}` : "\n\n(Chưa có gói đăng: dùng skill dong-goi-dang-bai viết trước.)";
+      return `Dùng skill len-lich-dang-bai lên lịch trên Metricool video "${p.title}" (${VT[p.vtype]?.[0] || p.vtype}). File video: ${p.output_url || "(chưa có link)"}. Nền tảng: ${p.platforms.map((x) => (PLAT.find((y) => y[0] === x) || [x, x])[1]).join(", ")}. Giờ đăng: ${p.scheduled_at ? fmt(p.scheduled_at) + " (giờ VN)" : "chọn giờ vàng gần nhất"}.${pk}`;
+    }
     if (p.stage === "dong_goi") return `Dùng skill dong-goi-dang-bai đóng gói video "${p.title}" (${VT[p.vtype]?.[0] || p.vtype}) cho ${p.platforms.map((x) => (PLAT.find((y) => y[0] === x) || [x, x])[1]).join(", ")}: tiêu đề, mô tả, thẻ, hashtag, ảnh bìa dọc và ngang trên Canva.${script}`;
     return "";
   }
@@ -962,9 +966,29 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
     dung: "Roadtrip ngắn có thể để máy dựng đám mây tự làm (đang hoàn thiện). Video dài và review dựng bằng CapCut trên máy: copy lệnh bên dưới dán vào Claude Code. Xong dán link bản xuất (Drive) rồi chuyển sang Duyệt.",
     duyet: "Copy lệnh dán vào Claude Code để duyet-video-roadtrip soi bản dựng. Đạt thì chuyển sang Đóng gói, chưa đạt thì Lùi về Dựng kèm ghi chú lỗi.",
     dong_goi: "Copy lệnh dán vào Claude Code để Agent Đóng gói viết tiêu đề, mô tả, hashtag và làm ảnh bìa. Xong tích \"Đã đóng gói\" rồi chuyển sang Lên lịch.",
-    len_lich: "Chọn nền tảng và giờ đăng. Agent lên lịch (Metricool) sẽ nối ở bước sau; tạm thời anh đăng tay rồi bấm Đã đăng.",
+    len_lich: "Chọn nền tảng và giờ đăng (có giờ vàng gợi ý từ Metricool). Copy lệnh dán vào Claude để Agent lên lịch đặt bài trên Metricool, rồi bấm Đã đăng khi bài lên.",
     da_dang: "Video đã đăng. Số liệu sẽ hiện ở Chỉ số nền tảng.",
   };
+  // Giờ vàng lấy từ Metricool (giờ VN); settings "best_times" ghi đè nếu có
+  const BEST_DEF = { tiktok: { hours: [10, 12, 18], days: [3, 4, 2, 5, 1, 6, 0] }, youtube_shorts: { hours: [16, 10], days: [3, 4, 2, 5, 1, 6, 0] }, youtube: { hours: [16], days: [3, 4, 2, 5, 1, 6, 0] }, facebook: { hours: [10, 12], days: [1, 2, 3, 5, 4, 6, 0] } };
+  function suggestSlot(p) {
+    const best = { ...BEST_DEF, ...getJSON("best_times", {}) };
+    const main = (p.platforms || []).find((x) => best[x]) || "tiktok";
+    const b = best[main];
+    const taken = state.prods.filter((x) => x.id !== p.id && x.scheduled_at && ["len_lich", "da_dang"].includes(x.stage)).map((x) => new Date(x.scheduled_at).getTime());
+    const nowVN = Date.now() + 7 * 36e5, minT = Date.now() + 3 * 36e5;
+    const cands = [];
+    for (let d = 0; d < 8; d++) {
+      const day = new Date(nowVN + d * 864e5); const dow = day.getUTCDay();
+      for (const h of b.hours) {
+        const t = Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), h) - 7 * 36e5;
+        if (t < minT || taken.some((x) => Math.abs(x - t) < 4 * 36e5)) continue;
+        cands.push({ t, score: d * 10 + b.days.indexOf(dow) * 2 + b.hours.indexOf(h) });
+      }
+    }
+    cands.sort((a, c) => a.score - c.score);
+    return cands[0] ? { at: new Date(cands[0].t).toISOString(), net: main } : null;
+  }
   const localDT = (iso) => { if (!iso) return ""; const d = new Date(new Date(iso).getTime() + 7 * 36e5); return d.toISOString().slice(0, 16); };
 
   function openProd(id, preset) {
@@ -987,9 +1011,11 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
         <label class="full">Nền tảng đăng<span class="pplat">${PLAT.map(([k, n]) => `<span class="ck"><input type="checkbox" value="${k}" ${p.platforms?.includes(k) ? "checked" : ""}> ${n}</span>`).join("")}</span></label>
         <label>Giờ đăng<input id="p-at" type="datetime-local" value="${localDT(p.scheduled_at)}"></label>
         <label class="ckl"><span class="ck"><input type="checkbox" id="p-pack" ${p.package?.done ? "checked" : ""}> Đã đóng gói (tiêu đề, mô tả, ảnh bìa)</span></label>
+        ${["dong_goi", "len_lich", "da_dang"].includes(p.stage) ? `<label class="full">Gói đăng (dán tiêu đề, mô tả, hashtag từ Agent Đóng gói)<textarea id="p-packtxt" rows="5" placeholder="TikTok: …&#10;YouTube: tiêu đề …&#10;Facebook: …">${esc(p.package?.text || "")}</textarea></label>` : ""}
+        ${p.stage === "len_lich" ? (() => { const sl = suggestSlot(p); return sl ? `<div class="full pslot">Giờ vàng gợi ý (${esc((PLAT.find((y) => y[0] === sl.net) || [sl.net, sl.net])[1])}): <b>${fmt(sl.at)}</b> <button class="btn sm" type="button" data-pslot="${sl.at}">Dùng giờ này</button></div>` : ""; })() : ""}
         <label class="full">Ghi chú / lỗi cần sửa<textarea id="p-note" rows="3">${esc(p.note || "")}</textarea></label>
       </div>
-      ${pr && p.id ? `<div class="pprompt"><div class="ph"><b>Lệnh cho Claude Code trên máy</b><button class="btn sm" type="button" data-copy="${esc(pr)}">Copy lệnh</button></div><pre>${esc(pr.slice(0, 600))}${pr.length > 600 ? "…" : ""}</pre></div>` : ""}
+      ${pr && p.id ? `<div class="pprompt"><div class="ph"><b>${["len_lich", "da_dang"].includes(p.stage) ? "Lệnh cho Claude (điện thoại hoặc máy tính)" : "Lệnh cho Claude Code trên máy"}</b><button class="btn sm" type="button" data-copy="${esc(pr)}">Copy lệnh</button></div><pre>${esc(pr.slice(0, 600))}${pr.length > 600 ? "…" : ""}</pre></div>` : ""}
       ${p.history?.length ? `<details class="phist"><summary>Lịch sử (${p.history.length})</summary>${[...p.history].reverse().map((h) => `<div><span class="muted">${fmt(h.at)}</span> · ${esc(h.t)}</div>`).join("")}</details>` : ""}</div>`;
     const back = si > 0 && p.id ? `<button class="btn" data-pmove="-1">← ${STN[STG[si - 1][0]]}</button>` : "";
     const fwd = si < STG.length - 1 ? `<button class="btn primary" data-pmove="1">${p.id ? `Chuyển sang ${STN[STG[si + 1][0]]} →` : "Tạo video"}</button>` : "";
@@ -1014,7 +1040,7 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
       output_url: $("#p-out").value.trim() || null,
       platforms: $$(".pplat input:checked").map((i) => i.value),
       scheduled_at: at ? new Date(at + ":00+07:00").toISOString() : null,
-      package: { ...(p.package || {}), done: $("#p-pack").checked },
+      package: { ...(p.package || {}), done: $("#p-pack").checked, ...($("#p-packtxt") ? { text: $("#p-packtxt").value.trim() } : {}) },
       note: $("#p-note").value.trim() || null,
     };
   }
@@ -1047,6 +1073,7 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
     if (ds.pfrom) { const a = state.approvals.find((x) => x.id == ds.pfrom); const tt = a.title.replace(/^Kịch bản:\s*/i, ""); const isRv = /review|đánh giá|trên tay|unbox/i.test(tt); openProd(null, { script_id: a.id, title: tt, ...(isRv ? { vtype: "review", edit_mode: "capcut" } : {}) }); return true; }
     if (ds.pst) { state.pstage = ds.pst; renderProd(); return true; }
     if (el.id === "p-loadloc" || el.id === "p-reloc") { el.disabled = true; el.textContent = "Đang đọc Drive…"; await loadDriveLocs(true); $("#p-locbox").innerHTML = locOptions(state.pedit); return true; }
+    if (ds.pslot) { $("#p-at").value = localDT(ds.pslot); return true; }
     if (ds.psave) { el.disabled = true; await saveProd(0); el.disabled = false; return true; }
     if (ds.pmove) { el.disabled = true; await saveProd(Number(ds.pmove)); el.disabled = false; return true; }
     if (ds.pdel) {
