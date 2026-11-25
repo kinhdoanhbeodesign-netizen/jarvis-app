@@ -86,8 +86,10 @@
     sb.channel("jarvis")
       .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, refreshAll)
       .on("postgres_changes", { event: "*", schema: "public", table: "approvals" }, refreshAll)
+      .on("postgres_changes", { event: "*", schema: "public", table: "productions" }, () => loadProd().then(() => { if (state.view === "prod") renderProd(); }))
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "platform_stats" }, () => loadLive().then(() => { refreshAll(); if (state.view === "mine") renderMine(); if (state.view === "dash") renderMineMini(); }))
       .subscribe();
+    loadProd();
     setInterval(refreshAll, 30_000);
     setInterval(() => { if (state.view === "dash") loadDash(); }, 120_000);
     setInterval(tick, 1000); tick();
@@ -882,6 +884,178 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
     return false;
   }
 
+  // ======================= SẢN XUẤT =======================
+  const STG = [["kich_ban", "Kịch bản"], ["dung", "Dựng"], ["duyet", "Duyệt"], ["dong_goi", "Đóng gói"], ["len_lich", "Lên lịch"], ["da_dang", "Đã đăng"]];
+  const STN = Object.fromEntries(STG);
+  const VT = { roadtrip_short: ["Roadtrip ngắn", "#2BD982"], roadtrip_long: ["Roadtrip dài", "#4C8DFF"], review: ["Review affiliate", "#F5B544"] };
+  const PLAT = [["tiktok", "TikTok"], ["youtube_shorts", "YouTube Shorts"], ["youtube", "YouTube (dài)"], ["facebook", "Facebook Reels"]];
+  state.prods = []; state.pstage = "kich_ban"; state.driveLocs = null;
+
+  async function loadProd() {
+    const { data, error } = await sb.from("productions").select("*").order("updated_at", { ascending: false }).limit(300);
+    if (!error) state.prods = data || [];
+    renderProdBadge();
+  }
+  function renderProdBadge() {
+    const n = state.prods.filter((p) => p.stage === "duyet").length;
+    $$(".badge-prod").forEach((b) => { b.textContent = n; b.classList.toggle("hidden", !n); });
+  }
+  const nextHint = (p) => ({
+    kich_ban: p.script_id ? "Đã có kịch bản · chọn footage rồi chuyển sang Dựng" : "Chưa gắn kịch bản",
+    dung: !p.location ? "Chưa chọn footage trên Drive" : p.output_url ? "Có bản dựng · chuyển sang Duyệt" : p.edit_mode === "cloud" ? "Chờ máy dựng đám mây" : "Dựng bằng CapCut trên máy",
+    duyet: p.audit?.verdict === "fail" ? "Cần sửa · quay lại Dựng" : "Chờ duyệt bản dựng",
+    dong_goi: p.package?.done ? "Đã có tiêu đề, mô tả, ảnh bìa" : "Chờ Agent Đóng gói",
+    len_lich: p.scheduled_at ? `Đăng ${fmt(p.scheduled_at)}` : "Chưa đặt giờ đăng",
+    da_dang: p.scheduled_at ? `Đã đăng ${fmt(p.scheduled_at)}` : "Đã đăng",
+  }[p.stage] || "");
+  const vtTag = (t) => { const v = VT[t] || [t, "var(--muted)"]; return `<span class="tag" style="color:${v[1]};border-color:${v[1]}55">${esc(v[0])}</span>`; };
+  const prodCard = (p) => `<button class="pcard" data-prod="${p.id}">
+      <span class="pc-t">${esc(p.title)}</span>
+      <span class="pc-m">${vtTag(p.vtype)}${p.location ? `<span class="muted">📍 ${esc(p.location)}</span>` : ""}</span>
+      <span class="pc-h ${p.audit?.verdict === "fail" ? "status-error" : ""}">${esc(nextHint(p))}</span>
+      <span class="pc-d muted">${fmt(p.updated_at)}</span></button>`;
+
+  function freeScripts() {
+    const used = new Set(state.prods.map((p) => p.script_id).filter(Boolean));
+    return state.approvals.filter((a) => a.kind === "script" && a.status === "approved" && !used.has(a.id));
+  }
+  function renderProd() {
+    const box = $("#prod-box"); if (!box) return;
+    const by = Object.fromEntries(STG.map(([k]) => [k, []]));
+    for (const p of state.prods) (by[p.stage] ||= []).push(p);
+    const fs = freeScripts();
+    const banner = fs.length ? `<div class="banner prod-banner"><span>${fs.length} kịch bản đã duyệt chưa vào sản xuất</span><div class="row" style="margin:0">${fs.slice(0, 3).map((a) => `<button class="btn sm" data-pfrom="${a.id}">+ ${esc(a.title.replace(/^Kịch bản:\s*/i, "").slice(0, 40))}</button>`).join("")}</div></div>` : "";
+    const chips = `<div class="chips pchips">${STG.map(([k, n]) => `<button class="chip ${state.pstage === k ? "active" : ""}" data-pst="${k}">${n} <b>${by[k].length}</b></button>`).join("")}</div>`;
+    const cols = `<div class="kanban">${STG.map(([k, n]) => `<div class="kcol ${state.pstage === k ? "on" : ""}" data-col="${k}"><div class="kh"><span>${n}</span><b>${by[k].length}</b></div>
+      <div class="kbody">${by[k].length ? by[k].map(prodCard).join("") : `<div class="kempty">Trống</div>`}</div></div>`).join("")}</div>`;
+    box.innerHTML = banner + chips + cols;
+  }
+
+  async function loadDriveLocs(force) {
+    if (state.driveLocs && !force) return state.driveLocs;
+    try { state.driveLocs = await callRunner({ drive_locations: true }); } catch (e) { state.driveLocs = { error: String(e.message || e) }; }
+    return state.driveLocs;
+  }
+  function locOptions(p) {
+    const d = state.driveLocs;
+    if (!d) return `<button class="btn sm" id="p-loadloc" type="button">Tải danh sách địa điểm từ Drive</button>`;
+    if (d.error) return `<p class="err" style="white-space:normal;margin:4px 0">${esc(d.msg || d.error)}</p>${d.error === "need_drive" ? `<button class="btn sm" data-view="mine" type="button">Mở Kết nối tài khoản</button>` : ""}`;
+    if (!d.locations?.length) return `<p class="muted" style="white-space:normal;margin:4px 0">Chưa có địa điểm nào trong 03_FOOTAGE. Tạo bản sao thư mục _MẪU, đổi tên theo địa điểm và tải footage lên.</p>${d.footage_url ? `<a href="${esc(d.footage_url)}" target="_blank" rel="noopener">Mở thư mục footage</a>` : ""}`;
+    return `<select id="p-loc"><option value="">— Chọn địa điểm —</option>${d.locations.map((l) => `<option value="${esc(l.id)}" ${p.drive_folder_id === l.id ? "selected" : ""}>${esc(l.name)} · ${l.total} clip (${l.subs.map((s) => `${esc(s.name.replace(/^roadtrip video /, ""))} ${s.count}`).join(", ")})</option>`).join("")}</select>`;
+  }
+
+  function promptFor(p) {
+    const sc = state.approvals.find((a) => a.id === p.script_id);
+    const loc = p.location ? `Footage trên Drive: Studio Chuyện Của Thắng/03_FOOTAGE/${p.location}` : "Footage: (chưa chọn)";
+    const script = sc ? `\n\nKịch bản đã duyệt:\n${sc.body}` : "";
+    const mode = p.vtype === "roadtrip_long" ? "chế độ Điện ảnh" : "chế độ Short";
+    if (p.stage === "kich_ban" || p.stage === "dung") {
+      if (p.vtype === "review") return `Đọc skill quy-dinh-dung-video rồi dùng skill review-affiliate-video dựng video "${p.title}". ${loc}/review sản phẩm. Xuất bản 9:16 và 16:9, báo tên project CapCut và file xuất.${script}`;
+      return `Đọc skill quy-dinh-dung-video rồi dùng skill roadtrip-edit (${mode}) dựng video "${p.title}". ${loc}/${p.vtype === "roadtrip_long" ? "roadtrip video ngang" : "roadtrip video dọc"}. Lập bảng dựng cho tôi duyệt trước, rồi dựng vào CapCut và báo tên project.${script}`;
+    }
+    if (p.stage === "duyet") return `Dùng skill duyet-video-roadtrip duyệt bản dựng video "${p.title}" (${VT[p.vtype]?.[0] || p.vtype}, ${mode})${p.output_url ? `, bản xuất: ${p.output_url}` : ""}. Lập biên bản lỗi có mốc thời gian, kết luận đăng được chưa.`;
+    if (p.stage === "dong_goi") return `Dùng skill dong-goi-dang-bai đóng gói video "${p.title}" (${VT[p.vtype]?.[0] || p.vtype}) cho ${p.platforms.map((x) => (PLAT.find((y) => y[0] === x) || [x, x])[1]).join(", ")}: tiêu đề, mô tả, thẻ, hashtag, ảnh bìa dọc và ngang trên Canva.${script}`;
+    return "";
+  }
+  const STEP_GUIDE = {
+    kich_ban: "Gắn kịch bản đã duyệt và chọn địa điểm footage, rồi bấm Chuyển sang Dựng.",
+    dung: "Roadtrip ngắn có thể để máy dựng đám mây tự làm (đang hoàn thiện). Video dài và review dựng bằng CapCut trên máy: copy lệnh bên dưới dán vào Claude Code. Xong dán link bản xuất (Drive) rồi chuyển sang Duyệt.",
+    duyet: "Copy lệnh dán vào Claude Code để duyet-video-roadtrip soi bản dựng. Đạt thì chuyển sang Đóng gói, chưa đạt thì Lùi về Dựng kèm ghi chú lỗi.",
+    dong_goi: "Copy lệnh dán vào Claude Code để Agent Đóng gói viết tiêu đề, mô tả, hashtag và làm ảnh bìa. Xong tích \"Đã đóng gói\" rồi chuyển sang Lên lịch.",
+    len_lich: "Chọn nền tảng và giờ đăng. Agent lên lịch (Metricool) sẽ nối ở bước sau; tạm thời anh đăng tay rồi bấm Đã đăng.",
+    da_dang: "Video đã đăng. Số liệu sẽ hiện ở Chỉ số nền tảng.",
+  };
+  const localDT = (iso) => { if (!iso) return ""; const d = new Date(new Date(iso).getTime() + 7 * 36e5); return d.toISOString().slice(0, 16); };
+
+  function openProd(id, preset) {
+    const p = id ? { ...state.prods.find((x) => x.id == id) } : { id: null, title: "", vtype: "roadtrip_short", stage: "kich_ban", edit_mode: "cloud", platforms: ["tiktok", "youtube_shorts", "facebook"], history: [], ...preset };
+    state.pedit = p;
+    const scripts = state.approvals.filter((a) => a.kind === "script" && (a.status === "approved" || a.id === p.script_id));
+    const si = STG.findIndex(([k]) => k === p.stage);
+    const pr = promptFor(p);
+    $("#detail-title").textContent = p.id ? p.title : "Video mới";
+    $("#detail-body").innerHTML = `<div style="white-space:normal">
+      <div class="pstep">${STG.map(([k, n], i) => `<span class="${i < si ? "done" : i === si ? "cur" : ""}">${n}</span>`).join("")}</div>
+      <p class="muted" style="white-space:normal;margin:8px 0 12px">${esc(STEP_GUIDE[p.stage])}</p>
+      <div class="pform">
+        <label class="full">Tên video<input id="p-title" value="${esc(p.title)}" placeholder="VD: Hà Giang mùa tam giác mạch"></label>
+        <label>Loại video<select id="p-vtype">${Object.entries(VT).map(([k, v]) => `<option value="${k}" ${p.vtype === k ? "selected" : ""}>${v[0]}</option>`).join("")}</select></label>
+        <label>Cách dựng<select id="p-mode"><option value="cloud" ${p.edit_mode === "cloud" ? "selected" : ""} ${p.vtype !== "roadtrip_short" ? "disabled" : ""}>Tự động trên đám mây</option><option value="capcut" ${p.edit_mode !== "cloud" || p.vtype !== "roadtrip_short" ? "selected" : ""}>CapCut trên máy tính</option></select></label>
+        <label class="full">Kịch bản<select id="p-script"><option value="">— Chưa gắn —</option>${scripts.map((a) => `<option value="${a.id}" ${p.script_id === a.id ? "selected" : ""}>${esc(a.title.slice(0, 70))}</option>`).join("")}</select></label>
+        <label class="full">Footage trên Drive${p.location ? ` <span class="muted">· đang chọn: ${esc(p.location)}</span>` : ""}<span id="p-locbox">${locOptions(p)}</span></label>
+        <label class="full">Link bản dựng (Drive / file xuất)<input id="p-out" value="${esc(p.output_url || "")}" placeholder="https://drive.google.com/…"></label>
+        <label class="full">Nền tảng đăng<span class="pplat">${PLAT.map(([k, n]) => `<span class="ck"><input type="checkbox" value="${k}" ${p.platforms?.includes(k) ? "checked" : ""}> ${n}</span>`).join("")}</span></label>
+        <label>Giờ đăng<input id="p-at" type="datetime-local" value="${localDT(p.scheduled_at)}"></label>
+        <label class="ckl"><span class="ck"><input type="checkbox" id="p-pack" ${p.package?.done ? "checked" : ""}> Đã đóng gói (tiêu đề, mô tả, ảnh bìa)</span></label>
+        <label class="full">Ghi chú / lỗi cần sửa<textarea id="p-note" rows="3">${esc(p.note || "")}</textarea></label>
+      </div>
+      ${pr && p.id ? `<div class="pprompt"><div class="ph"><b>Lệnh cho Claude Code trên máy</b><button class="btn sm" type="button" data-copy="${esc(pr)}">Copy lệnh</button></div><pre>${esc(pr.slice(0, 600))}${pr.length > 600 ? "…" : ""}</pre></div>` : ""}
+      ${p.history?.length ? `<details class="phist"><summary>Lịch sử (${p.history.length})</summary>${[...p.history].reverse().map((h) => `<div><span class="muted">${fmt(h.at)}</span> · ${esc(h.t)}</div>`).join("")}</details>` : ""}</div>`;
+    const back = si > 0 && p.id ? `<button class="btn" data-pmove="-1">← ${STN[STG[si - 1][0]]}</button>` : "";
+    const fwd = si < STG.length - 1 ? `<button class="btn primary" data-pmove="1">${p.id ? `Chuyển sang ${STN[STG[si + 1][0]]} →` : "Tạo video"}</button>` : "";
+    $("#detail-actions").innerHTML = `${p.id ? `<button class="btn danger sm" data-pdel="1">Xoá</button>` : ""}<span style="flex:1"></span>${back}${p.id ? `<button class="btn" data-psave="1">Lưu</button>${fwd}` : `<button class="btn primary" data-psave="1">Tạo video</button>`}`;
+    if (!$("#detail").open) $("#detail").showModal();
+    const vt = $("#p-vtype"); vt.onchange = () => { const cl = $("#p-mode option[value=cloud]"); cl.disabled = vt.value !== "roadtrip_short"; if (cl.disabled) $("#p-mode").value = "capcut"; };
+    const sc = $("#p-script"); sc.onchange = () => { const a = state.approvals.find((x) => x.id == sc.value); if (a && !$("#p-title").value.trim()) $("#p-title").value = a.title.replace(/^Kịch bản:\s*/i, ""); };
+  }
+
+  function readForm() {
+    const p = state.pedit;
+    const locSel = $("#p-loc");
+    const loc = locSel && locSel.value ? state.driveLocs.locations.find((l) => l.id === locSel.value) : null;
+    const at = $("#p-at").value;
+    return {
+      title: $("#p-title").value.trim(),
+      vtype: $("#p-vtype").value,
+      edit_mode: $("#p-mode").value,
+      script_id: $("#p-script").value ? Number($("#p-script").value) : null,
+      location: loc ? loc.name : p.location || null,
+      drive_folder_id: loc ? loc.id : p.drive_folder_id || null,
+      output_url: $("#p-out").value.trim() || null,
+      platforms: $$(".pplat input:checked").map((i) => i.value),
+      scheduled_at: at ? new Date(at + ":00+07:00").toISOString() : null,
+      package: { ...(p.package || {}), done: $("#p-pack").checked },
+      note: $("#p-note").value.trim() || null,
+    };
+  }
+  async function saveProd(move) {
+    const p = state.pedit; const f = readForm();
+    if (!f.title) { $("#p-title").focus(); return; }
+    const hist = [...(p.history || [])];
+    let stage = p.stage;
+    if (move) {
+      const i = STG.findIndex(([k]) => k === stage) + move;
+      if (i < 0 || i >= STG.length) return;
+      if (move > 0 && STG[i][0] === "duyet" && !f.output_url && f.edit_mode !== "cloud") { alertBox("Chưa có bản dựng", "Dán link bản xuất (Drive) vào ô \"Link bản dựng\" trước khi chuyển sang Duyệt."); return; }
+      stage = STG[i][0];
+      hist.push({ at: new Date().toISOString(), t: `${move > 0 ? "Chuyển sang" : "Lùi về"} ${STN[stage]}${move < 0 && f.note ? `: ${f.note.slice(0, 120)}` : ""}` });
+    }
+    if (!p.id) hist.push({ at: new Date().toISOString(), t: "Tạo video" });
+    const row = { ...f, stage, history: hist, updated_at: new Date().toISOString() };
+    if (stage === "da_dang" && !row.scheduled_at) row.scheduled_at = new Date().toISOString();
+    const { data, error } = p.id ? await sb.from("productions").update(row).eq("id", p.id).select().maybeSingle() : await sb.from("productions").insert(row).select().maybeSingle();
+    if (error) return alertBox("Không lưu được", error.message);
+    await loadProd(); state.pstage = stage; renderProd();
+    if (data?.id) openProd(data.id); else $("#detail").close();
+  }
+
+  async function prodClick(el) {
+    const ds = el.dataset;
+    if (ds.view && $("#detail").open) $("#detail").close();
+    if (ds.prod) { openProd(ds.prod); return true; }
+    if (el.id === "p-new") { openProd(null); return true; }
+    if (ds.pfrom) { const a = state.approvals.find((x) => x.id == ds.pfrom); const tt = a.title.replace(/^Kịch bản:\s*/i, ""); const isRv = /review|đánh giá|trên tay|unbox/i.test(tt); openProd(null, { script_id: a.id, title: tt, ...(isRv ? { vtype: "review", edit_mode: "capcut" } : {}) }); return true; }
+    if (ds.pst) { state.pstage = ds.pst; renderProd(); return true; }
+    if (el.id === "p-loadloc" || el.id === "p-reloc") { el.disabled = true; el.textContent = "Đang đọc Drive…"; await loadDriveLocs(true); $("#p-locbox").innerHTML = locOptions(state.pedit); return true; }
+    if (ds.psave) { el.disabled = true; await saveProd(0); el.disabled = false; return true; }
+    if (ds.pmove) { el.disabled = true; await saveProd(Number(ds.pmove)); el.disabled = false; return true; }
+    if (ds.pdel) {
+      if (!confirm(`Xoá video "${state.pedit.title}" khỏi bảng Sản xuất? Footage và bản dựng trên Drive không bị xoá.`)) return true;
+      await sb.from("productions").delete().eq("id", state.pedit.id); $("#detail").close(); await loadProd(); renderProd(); return true;
+    }
+    return false;
+  }
+
   // ======================= KẾT NỐI TÀI KHOẢN =======================
   state.live = {};
   async function loadLive() {
@@ -1113,6 +1287,7 @@ ${r}
     if (!el) return;
 
     if (await connClick(el)) return;
+    if (await prodClick(el)) return;
     if (await extraClick(el)) return;
     if (el.dataset.view) return showView(el.dataset.view);
     if (el.dataset.go) return showView(el.dataset.go);
@@ -1325,6 +1500,7 @@ ${r}
     if (v === "brain") loadBrain();
     if (v === "comp") loadComp();
     if (v === "tasks") renderTasks();
+    if (v === "prod") { renderProd(); loadProd().then(renderProd); }
     if (v === "mine") renderMine();
     if (v === "goals") renderGoals();
     if (v === "hot") renderHot();
