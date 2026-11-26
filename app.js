@@ -1005,7 +1005,7 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
         ${p.pipe?.at ? `<div class="muted" style="font-size:12px;margin-top:4px">Cập nhật ${fmt(p.pipe.step_at || p.pipe.at)}${p.pipe.n ? ` · lần dựng ${p.pipe.n}` : ""}${p.pipe.run ? ` · <a href="${esc(p.pipe.run)}" target="_blank" rel="noopener">nhật ký</a>` : ""}</div>` : ""}
         ${p.stage === "dung" && st !== "running" ? `<button class="btn sm" type="button" data-prequeue="1" style="margin-top:8px">${st === "error" || st === "done" ? "Dựng lại" : "Đưa vào hàng chờ ngay"}</button>` : ""}</div>`;
     }
-    if (p.output_url) h += `<a class="btn primary sm" style="display:inline-flex;margin:0 0 10px" href="${esc(p.output_url)}" target="_blank" rel="noopener">▶ Xem bản dựng</a>`;
+    if (p.output_url) h += `<div class="row" style="margin:0 0 10px;gap:8px;flex-wrap:wrap"><a class="btn primary sm" style="display:inline-flex" href="${esc(p.output_url)}" target="_blank" rel="noopener">▶ Xem bản dựng</a>${p.audit?.sheet_url ? `<a class="btn sm" style="display:inline-flex" href="${esc(p.audit.sheet_url)}" target="_blank" rel="noopener">Lưới khung hình</a>` : ""}</div>`;
     const a = p.audit;
     if (a && (a.verdict || a.issues?.length)) {
       const c = a.checks || {};
