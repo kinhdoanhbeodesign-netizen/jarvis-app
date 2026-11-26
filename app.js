@@ -974,8 +974,8 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
   const STEP_GUIDE = {
     kich_ban: "Gắn kịch bản đã duyệt rồi chuyển sang Anh tự dựng.",
     dung: "Anh dựng trên máy tính. Xong xuất video và tải lên Drive, thư mục 06_VIDEO_HOAN_THIEN (đặt tên file bắt đầu bằng mã video, ví dụ 001-ten-video.mp4, để Jarvis gắn đúng thẻ này). Jarvis tự nhận video và chuyển sang Đóng gói.",
-    dong_goi: "Mỗi giờ (7h–23h) Jarvis xem thư mục 06_VIDEO_HOAN_THIEN: viết tiêu đề, mô tả, hashtag cho TikTok, YouTube, Facebook rồi đặt lịch giờ vàng trên Metricool. Không cần làm gì thêm.",
-    len_lich: "Jarvis đã đặt lịch trên Metricool. Bài tự đăng đúng giờ; xem hoặc sửa trong Metricool nếu cần.",
+    dong_goi: "Mỗi giờ (7h–23h) Jarvis xem thư mục 06_VIDEO_HOAN_THIEN: tự đặt lịch Facebook giờ vàng (video được ưu tiên, bài ảnh tự lùi sang khung sau) và viết sẵn tiêu đề, mô tả, hashtag TikTok/YouTube để anh tự đăng.",
+    len_lich: "Facebook đã lên lịch trên Metricool. TikTok và YouTube: copy gợi ý bên trên rồi anh tự đăng, xong bấm chuyển sang Đã đăng.",
     da_dang: "Video đã đăng. Số liệu sẽ hiện ở Chỉ số nền tảng.",
   };
   // Giờ vàng lấy từ Metricool (giờ VN); settings "best_times" ghi đè nếu có
@@ -1056,7 +1056,7 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
     const posts = p.package?.posts || [];
     if (p.output_url) h += `<a class="btn primary sm" style="display:inline-flex;margin:0 0 10px" href="${esc(p.output_url)}" target="_blank" rel="noopener">▶ Xem video hoàn thiện</a>`;
     if (posts.length) h += `<div class="paudit"><b>Lịch đăng Jarvis đã đặt trên Metricool</b><ul>${posts.map((x) => `<li>${esc(x.network)} · ${fmt(x.at)}${x.title ? ` · <span class="muted">${esc(x.title)}</span>` : ""}</li>`).join("")}</ul></div>`;
-    if (p.package?.text) h += `<details class="paudit"><summary><b>Tiêu đề, mô tả, hashtag</b></summary><div style="white-space:pre-wrap;margin-top:6px">${esc(p.package.text)}</div></details>`;
+    if (p.package?.text) h += `<details class="paudit" open><summary><b>Gợi ý đăng TikTok / YouTube (anh tự đăng)</b></summary><div id="p-packshow" style="white-space:pre-wrap;margin-top:6px">${esc(p.package.text)}</div><button class="btn sm" type="button" data-pcopy="1" style="margin-top:8px">Copy toàn bộ</button></details>`;
     return h;
     if (p.edit_mode === "cloud" && p.stage === "dung") {
       const st = p.pipe?.status;
@@ -1188,6 +1188,7 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
       await sb.from("productions").update({ ...f, edit_mode: "cloud", pipe: { ...(p.pipe || {}), status: "queued", mode: tr ? "transcribe" : null, at: new Date().toISOString(), error: null, step: null, pct: 0 }, history: [...(p.history || []), { at: new Date().toISOString(), t: tr ? "Đưa vào hàng chờ chép lời" : "Đưa vào hàng chờ máy dựng" }], updated_at: new Date().toISOString() }).eq("id", p.id);
       await loadProd(); renderProd(); openProd(p.id); return true;
     }
+    if (ds.pcopy) { try { await navigator.clipboard.writeText($("#p-packshow").textContent); el.textContent = "Đã copy ✓"; } catch (e) { el.textContent = "Không copy được, giữ để chọn chữ"; } return true; }
     if (ds.ptr) { openTranscript(state.pedit.id); return true; }
     if (ds.trsuggest) {
       // gợi ý: câu nói dở (≤3 từ, "…") và các lần nói trước của cùng một ý trong cùng clip → tick Bỏ; anh xem lại rồi bỏ tick nếu sai
@@ -1529,6 +1530,13 @@ ${r}
       notify?.("Jarvis đang sửa kịch bản", "Bản mới sẽ vào Hộp duyệt. Duyệt xong, video tự chuyển sang bản mới.");
       return refreshAll();
     }
+    if (el.dataset.fbok) {
+      const body = $("#fb-cap")?.value?.trim(); if (!body) return;
+      el.disabled = true;
+      await sb.from("approvals").update({ body, status: "approved", decided_at: new Date().toISOString() }).eq("id", el.dataset.fbok);
+      $("#detail").close(); notify?.("Đã duyệt bài Facebook", "Jarvis sẽ đặt lịch giờ vàng trong vòng 1 tiếng (video được ưu tiên giờ đẹp).");
+      return refreshAll();
+    }
     if (el.dataset.decide) {
       const [id, status] = el.dataset.decide.split(":");
       const note = $("#decide-note")?.value?.trim() || null;
@@ -1611,14 +1619,14 @@ ${r}
   function renderInbox() {
     const active = ["pending", "queued", "writing", "error"];
     const list = state.approvals.filter((a) => (state.inbox === "pending" ? active.includes(a.status) : !active.includes(a.status)));
-    const KIND = { ideas: "Ý tưởng", script: "Kịch bản" };
+    const KIND = { ideas: "Ý tưởng", script: "Kịch bản", fb_post: "Bài ảnh Facebook" };
     const ST = { approved: ["Đã duyệt", "status-ok"], rejected: ["Từ chối", "status-error"], revise: ["Đang yêu cầu sửa", "muted"], revised: ["Đã có bản sửa", "muted"], error: ["Lỗi – bấm Xem để thử lại", "status-error"] };
     $("#inbox-list").innerHTML = list.length ? list.map((a) => `
       <article class="card">
         <div class="body">
           <span class="title">${esc(a.title)}</span>
           <span class="meta"><span class="tag">${KIND[a.kind] || esc(a.kind)}</span>${a.version > 1 ? `<span class="tag">Bản ${a.version}</span>` : ""}${fmt(a.created_at)}
-          ${ST[a.status] ? ` · <b class="${ST[a.status][1]}">${ST[a.status][0]}</b>` : ""}</span>
+          ${ST[a.status] ? ` · <b class="${ST[a.status][1]}">${ST[a.status][0]}</b>` : ""}${a.kind === "fb_post" && a.status === "approved" ? ` · ${a.meta?.scheduled_at ? `đăng ${fmt(a.meta.scheduled_at)}` : a.meta?.error ? `<b class="status-error">lỗi đặt lịch</b>` : "chờ Jarvis đặt lịch"}` : ""}</span>
         </div>
         ${a.status === "queued" || a.status === "writing" ? `<span class="status-running" style="font-size:13px">Jarvis đang viết…</span>`
           : `<button class="btn sm ${a.status === "pending" ? "primary" : ""}" data-open="${a.id}">${a.status === "pending" ? "Xem & duyệt" : a.kind === "script" && a.status === "approved" ? "Xem & sửa" : "Xem"}</button>`}
@@ -1723,6 +1731,17 @@ ${r}
     if (approval?.status === "error") {
       $("#detail-body").innerHTML = md("Jarvis chưa viết xong kịch bản này.\n\nLý do: " + (approval.note || "không rõ") + "\n\nBấm Thử lại để Jarvis viết lại.");
       $("#detail-actions").innerHTML = `<button class="btn primary" data-retry="${approval.id}">Thử lại</button>`;
+      return $("#detail").showModal();
+    }
+    if (approval?.kind === "fb_post") {
+      const ims = approval.meta?.images || [];
+      $("#detail-body").innerHTML = `<div style="white-space:normal">
+        <div class="fbimgs">${ims.map((im) => im.thumb ? `<img src="data:image/jpeg;base64,${im.thumb}" alt="${esc(im.name || "")}">` : `<span class="muted">${esc(im.name || im.id)}</span>`).join("")}</div>
+        ${approval.meta?.why ? `<p class="muted" style="margin:8px 0">${esc(approval.meta.why)}</p>` : ""}
+        ${approval.status === "pending" ? `<label class="muted" style="display:block;margin:8px 0 4px">Nội dung bài (sửa trực tiếp nếu cần)</label><textarea id="fb-cap" rows="8" style="width:100%;font:inherit;padding:10px;border-radius:10px;border:1px solid var(--line,#333);background:transparent;color:inherit">${esc(approval.body)}</textarea>`
+          : `<div style="white-space:pre-wrap;margin-top:8px">${esc(approval.body)}</div>${approval.meta?.scheduled_at ? `<p><b>Đăng lúc ${fmt(approval.meta.scheduled_at)}</b> (Facebook, qua Metricool)</p>` : approval.meta?.error ? `<p class="status-error">Lỗi đặt lịch: ${esc(approval.meta.error)}</p>` : approval.status === "approved" ? `<p class="muted">Jarvis sẽ đặt lịch giờ vàng ở lần chạy kế tiếp (mỗi giờ 7h–23h).</p>` : ""}`}
+      </div>`;
+      $("#detail-actions").innerHTML = approval.status === "pending" ? `<button class="btn primary" data-fbok="${approval.id}">Duyệt & để Jarvis đặt lịch</button><button class="btn danger" data-decide="${approval.id}:rejected">Bỏ bài này</button>` : "";
       return $("#detail").showModal();
     }
     const isScript = approval?.kind === "script";

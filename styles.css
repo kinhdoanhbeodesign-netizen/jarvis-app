@@ -433,3 +433,6 @@ a.card.ttv{text-decoration:none;color:inherit;padding:10px 12px;background:#0A12
 .trt{font-size:12px;color:var(--muted);padding-top:8px}
 .trd{display:flex;gap:4px;align-items:center;font-size:13px;padding-top:6px;white-space:nowrap}
 .trrow.drop textarea{text-decoration:line-through;opacity:.45}
+
+.fbimgs{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:6px}
+.fbimgs img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px}
