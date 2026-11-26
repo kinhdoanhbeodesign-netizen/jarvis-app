@@ -885,7 +885,7 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
   }
 
   // ======================= SẢN XUẤT =======================
-  const STG = [["kich_ban", "Kịch bản"], ["dung", "Dựng"], ["duyet", "Duyệt"], ["dong_goi", "Đóng gói"], ["len_lich", "Lên lịch"], ["da_dang", "Đã đăng"]];
+  const STG = [["kich_ban", "Kịch bản"], ["dung", "Anh tự dựng"], ["dong_goi", "Đóng gói"], ["len_lich", "Lên lịch"], ["da_dang", "Đã đăng"]];
   const STN = Object.fromEntries(STG);
   const VT = { roadtrip_short: ["Roadtrip ngắn", "#2BD982"], roadtrip_long: ["Roadtrip dài", "#4C8DFF"], review: ["Review affiliate", "#F5B544"] };
   const PLAT = [["tiktok", "TikTok"], ["youtube_shorts", "YouTube Shorts"], ["youtube", "YouTube (dài)"], ["facebook", "Facebook Reels"]];
@@ -898,15 +898,14 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
     livePipe();
   }
   function renderProdBadge() {
-    const n = state.prods.filter((p) => p.stage === "duyet").length;
+    const n = state.prods.filter((p) => p.stage === "dong_goi").length;
     $$(".badge-prod").forEach((b) => { b.textContent = n; b.classList.toggle("hidden", !n); });
   }
   const nextHint = (p) => ({
-    kich_ban: p.script_id ? "Đã có kịch bản · chọn footage rồi chuyển sang Dựng" : "Chưa gắn kịch bản",
-    dung: !p.location ? "Chưa chọn footage trên Drive" : p.edit_mode === "cloud" ? pipeHint(p) : p.output_url ? "Có bản dựng · chuyển sang Duyệt" : "Dựng bằng CapCut trên máy",
-    duyet: p.audit?.verdict ? `Tự duyệt: ${p.audit.verdict === "pass" ? "đạt" : "cần xem"}${p.audit.score != null ? ` ${p.audit.score}/10` : ""} · chờ anh duyệt` : "Chờ duyệt bản dựng",
-    dong_goi: p.package?.done ? "Đã có tiêu đề, mô tả, ảnh bìa" : "Chờ Agent Đóng gói",
-    len_lich: p.scheduled_at ? `Đăng ${fmt(p.scheduled_at)}` : "Chưa đặt giờ đăng",
+    kich_ban: p.script_id ? "Đã có kịch bản · chuyển sang Anh tự dựng" : "Chưa gắn kịch bản",
+    dung: p.final_file_id ? "Đã có video hoàn thiện" : "Dựng trên máy tính · xong tải lên Drive 06_VIDEO_HOAN_THIEN",
+    dong_goi: "Jarvis đang viết tiêu đề và lên lịch (mỗi giờ 7h–23h)",
+    len_lich: p.scheduled_at ? `Lên lịch ${fmt(p.scheduled_at)}${p.package?.posts?.length ? ` · ${p.package.posts.length} nền tảng` : ""}` : "Chưa đặt giờ đăng",
     da_dang: p.scheduled_at ? `Đã đăng ${fmt(p.scheduled_at)}` : "Đã đăng",
   }[p.stage] || "");
   function pipeHint(p) {
@@ -973,11 +972,10 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
     return "";
   }
   const STEP_GUIDE = {
-    kich_ban: "Gắn kịch bản đã duyệt và chọn địa điểm footage, rồi bấm Chuyển sang Dựng.",
-    dung: "Video ngắn (roadtrip, review) có thể để máy dựng đám mây tự làm: chọn footage, chọn \"Tự động trên đám mây\" rồi lưu, máy tự chạy mỗi giờ 7h–23h, xong tự chuyển sang Duyệt. Video dài dựng bằng CapCut trên máy: copy lệnh dán vào Claude Code, xong dán link bản xuất.",
-    duyet: "Xem bản dựng và biên bản tự duyệt. Đạt thì chuyển sang Đóng gói. Chưa đạt thì ghi lỗi vào Ghi chú rồi Lùi về Dựng: máy dựng đám mây sẽ tự dựng lại theo ghi chú.",
-    dong_goi: "Copy lệnh dán vào Claude Code để Agent Đóng gói viết tiêu đề, mô tả, hashtag và làm ảnh bìa. Xong tích \"Đã đóng gói\" rồi chuyển sang Lên lịch.",
-    len_lich: "Chọn nền tảng và giờ đăng (có giờ vàng gợi ý từ Metricool). Copy lệnh dán vào Claude để Agent lên lịch đặt bài trên Metricool, rồi bấm Đã đăng khi bài lên.",
+    kich_ban: "Gắn kịch bản đã duyệt rồi chuyển sang Anh tự dựng.",
+    dung: "Anh dựng trên máy tính. Xong xuất video và tải lên Drive, thư mục 06_VIDEO_HOAN_THIEN (đặt tên file bắt đầu bằng mã video, ví dụ 001-ten-video.mp4, để Jarvis gắn đúng thẻ này). Jarvis tự nhận video và chuyển sang Đóng gói.",
+    dong_goi: "Mỗi giờ (7h–23h) Jarvis xem thư mục 06_VIDEO_HOAN_THIEN: viết tiêu đề, mô tả, hashtag cho TikTok, YouTube, Facebook rồi đặt lịch giờ vàng trên Metricool. Không cần làm gì thêm.",
+    len_lich: "Jarvis đã đặt lịch trên Metricool. Bài tự đăng đúng giờ; xem hoặc sửa trong Metricool nếu cần.",
     da_dang: "Video đã đăng. Số liệu sẽ hiện ở Chỉ số nền tảng.",
   };
   // Giờ vàng lấy từ Metricool (giờ VN); settings "best_times" ghi đè nếu có
@@ -1055,6 +1053,11 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
   }
   function pipePanel(p) {
     let h = "";
+    const posts = p.package?.posts || [];
+    if (p.output_url) h += `<a class="btn primary sm" style="display:inline-flex;margin:0 0 10px" href="${esc(p.output_url)}" target="_blank" rel="noopener">▶ Xem video hoàn thiện</a>`;
+    if (posts.length) h += `<div class="paudit"><b>Lịch đăng Jarvis đã đặt trên Metricool</b><ul>${posts.map((x) => `<li>${esc(x.network)} · ${fmt(x.at)}${x.title ? ` · <span class="muted">${esc(x.title)}</span>` : ""}</li>`).join("")}</ul></div>`;
+    if (p.package?.text) h += `<details class="paudit"><summary><b>Tiêu đề, mô tả, hashtag</b></summary><div style="white-space:pre-wrap;margin-top:6px">${esc(p.package.text)}</div></details>`;
+    return h;
     if (p.edit_mode === "cloud" && p.stage === "dung") {
       const st = p.pipe?.status;
       h += `<div class="ppipe ${st === "error" ? "err" : ""}" id="p-pipebox"><b>${esc(pipeHint(p))}</b>${st === "running" ? pbar(p, true) : ""}
@@ -1100,7 +1103,7 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
     const scripts = state.approvals.filter((a) => a.kind === "script" && (a.status === "approved" || a.id === p.script_id));
     const si = STG.findIndex(([k]) => k === p.stage);
     const pr = promptFor(p);
-    $("#detail-title").textContent = p.id ? p.title : "Video mới";
+    $("#detail-title").textContent = p.id ? `${String(p.id).padStart(3, "0")} · ${p.title}` : "Video mới";
     $("#detail-body").innerHTML = `<div style="white-space:normal">
       <div class="pstep">${STG.map(([k, n], i) => `<span class="${i < si ? "done" : i === si ? "cur" : ""}">${n}</span>`).join("")}</div>
       <p class="muted" style="white-space:normal;margin:8px 0 12px">${esc(STEP_GUIDE[p.stage])}</p>
@@ -1108,10 +1111,10 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
       <div class="pform">
         <label class="full">Tên video<input id="p-title" value="${esc(p.title)}" placeholder="VD: Hà Giang mùa tam giác mạch"></label>
         <label>Loại video<select id="p-vtype">${Object.entries(VT).map(([k, v]) => `<option value="${k}" ${p.vtype === k ? "selected" : ""}>${v[0]}</option>`).join("")}</select></label>
-        <label>Cách dựng<select id="p-mode"><option value="cloud" ${p.edit_mode === "cloud" && p.vtype !== "roadtrip_long" ? "selected" : ""} ${p.vtype === "roadtrip_long" ? "disabled" : ""}>Tự động trên đám mây (video ngắn 9:16)</option><option value="capcut" ${p.edit_mode !== "cloud" || p.vtype === "roadtrip_long" ? "selected" : ""}>CapCut trên máy tính</option></select></label>
+<input type="hidden" id="p-mode" value="capcut">
         <label class="full">Kịch bản<select id="p-script"><option value="">— Chưa gắn —</option>${scripts.map((a) => `<option value="${a.id}" ${p.script_id === a.id ? "selected" : ""}>${esc(a.title.slice(0, 70))}</option>`).join("")}</select></label>${p.script_id ? `<button type="button" class="btn sm full" data-open="${p.script_id}">Xem / sửa kịch bản đã duyệt</button>` : ""}
         <label class="full">Footage trên Drive${p.location ? ` <span class="muted">· đang chọn: ${esc(p.location)}</span>` : ""}<span id="p-locbox">${locOptions(p)}</span></label>
-        <label class="full">Link bản dựng (Drive / file xuất)<input id="p-out" value="${esc(p.output_url || "")}" placeholder="https://drive.google.com/…"></label>
+        <label class="full">Video hoàn thiện (Jarvis tự điền khi anh tải lên Drive 06_VIDEO_HOAN_THIEN)<input id="p-out" value="${esc(p.output_url || "")}" placeholder="https://drive.google.com/…"></label>
         <label class="full">Nền tảng đăng<span class="pplat">${PLAT.map(([k, n]) => `<span class="ck"><input type="checkbox" value="${k}" ${p.platforms?.includes(k) ? "checked" : ""}> ${n}</span>`).join("")}</span></label>
         <label>Giờ đăng<input id="p-at" type="datetime-local" value="${localDT(p.scheduled_at)}"></label>
         <label class="ckl"><span class="ck"><input type="checkbox" id="p-pack" ${p.package?.done ? "checked" : ""}> Đã đóng gói (tiêu đề, mô tả, ảnh bìa)</span></label>
@@ -1125,7 +1128,7 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
     const fwd = si < STG.length - 1 ? `<button class="btn primary" data-pmove="1">${p.id ? `Chuyển sang ${STN[STG[si + 1][0]]} →` : "Tạo video"}</button>` : "";
     $("#detail-actions").innerHTML = `${p.id ? `<button class="btn danger sm" data-pdel="1">Xoá</button>` : ""}<span style="flex:1"></span>${back}${p.id ? `<button class="btn" data-psave="1">Lưu</button>${fwd}` : `<button class="btn primary" data-psave="1">Tạo video</button>`}`;
     if (!$("#detail").open) $("#detail").showModal();
-    const vt = $("#p-vtype"); vt.onchange = () => { const cl = $("#p-mode option[value=cloud]"); cl.disabled = vt.value === "roadtrip_long"; if (cl.disabled) $("#p-mode").value = "capcut"; };
+
     const sc = $("#p-script"); sc.onchange = () => { const a = state.approvals.find((x) => x.id == sc.value); if (a && !$("#p-title").value.trim()) $("#p-title").value = a.title.replace(/^Kịch bản:\s*/i, ""); };
   }
 
@@ -1156,13 +1159,11 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
     if (move) {
       const i = STG.findIndex(([k]) => k === stage) + move;
       if (i < 0 || i >= STG.length) return;
-      if (move > 0 && STG[i][0] === "duyet" && !f.output_url && f.edit_mode !== "cloud") { alertBox("Chưa có bản dựng", "Dán link bản xuất (Drive) vào ô \"Link bản dựng\" trước khi chuyển sang Duyệt."); return; }
       stage = STG[i][0];
       hist.push({ at: new Date().toISOString(), t: `${move > 0 ? "Chuyển sang" : "Lùi về"} ${STN[stage]}${move < 0 && f.note ? `: ${f.note.slice(0, 120)}` : ""}` });
     }
     if (!p.id) hist.push({ at: new Date().toISOString(), t: "Tạo video" });
     const row = { ...f, stage, history: hist, updated_at: new Date().toISOString() };
-    if (move && stage === "dung" && f.edit_mode === "cloud") row.pipe = { ...(p.pipe || {}), status: "queued", at: new Date().toISOString(), error: null, step: null };
     if (stage === "da_dang" && !row.scheduled_at) row.scheduled_at = new Date().toISOString();
     const { data, error } = p.id ? await sb.from("productions").update(row).eq("id", p.id).select().maybeSingle() : await sb.from("productions").insert(row).select().maybeSingle();
     if (error) return alertBox("Không lưu được", error.message);
