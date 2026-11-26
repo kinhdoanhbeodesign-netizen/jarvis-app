@@ -1088,7 +1088,7 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
         <label class="full">Tên video<input id="p-title" value="${esc(p.title)}" placeholder="VD: Hà Giang mùa tam giác mạch"></label>
         <label>Loại video<select id="p-vtype">${Object.entries(VT).map(([k, v]) => `<option value="${k}" ${p.vtype === k ? "selected" : ""}>${v[0]}</option>`).join("")}</select></label>
         <label>Cách dựng<select id="p-mode"><option value="cloud" ${p.edit_mode === "cloud" && p.vtype !== "roadtrip_long" ? "selected" : ""} ${p.vtype === "roadtrip_long" ? "disabled" : ""}>Tự động trên đám mây (video ngắn 9:16)</option><option value="capcut" ${p.edit_mode !== "cloud" || p.vtype === "roadtrip_long" ? "selected" : ""}>CapCut trên máy tính</option></select></label>
-        <label class="full">Kịch bản<select id="p-script"><option value="">— Chưa gắn —</option>${scripts.map((a) => `<option value="${a.id}" ${p.script_id === a.id ? "selected" : ""}>${esc(a.title.slice(0, 70))}</option>`).join("")}</select></label>
+        <label class="full">Kịch bản<select id="p-script"><option value="">— Chưa gắn —</option>${scripts.map((a) => `<option value="${a.id}" ${p.script_id === a.id ? "selected" : ""}>${esc(a.title.slice(0, 70))}</option>`).join("")}</select></label>${p.script_id ? `<button type="button" class="btn sm full" data-open="${p.script_id}">Xem / sửa kịch bản đã duyệt</button>` : ""}
         <label class="full">Footage trên Drive${p.location ? ` <span class="muted">· đang chọn: ${esc(p.location)}</span>` : ""}<span id="p-locbox">${locOptions(p)}</span></label>
         <label class="full">Link bản dựng (Drive / file xuất)<input id="p-out" value="${esc(p.output_url || "")}" placeholder="https://drive.google.com/…"></label>
         <label class="full">Nền tảng đăng<span class="pplat">${PLAT.map(([k, n]) => `<span class="ck"><input type="checkbox" value="${k}" ${p.platforms?.includes(k) ? "checked" : ""}> ${n}</span>`).join("")}</span></label>
@@ -1439,11 +1439,32 @@ ${r}
     }
     if (el.dataset.open) {
       const ap = state.approvals.find((x) => x.id == el.dataset.open);
-      return openDetail(ap.title, ap.body, ap.status === "pending" || ap.status === "error" ? ap : null);
+      return openDetail(ap.title, ap.body, ap.status === "pending" || ap.status === "error" || (ap.kind === "script" && ap.status === "approved") ? ap : null);
     }
     if (el.dataset.openrun) {
       const r = state.runs.find((x) => x.id == el.dataset.openrun);
       return openDetail(r.tasks?.title || "Lần chạy", r.status === "error" ? "Lỗi: " + r.error : stripPreamble(r.output) || "(trống)");
+    }
+    if (el.dataset.sedit) {
+      const ap = state.approvals.find((x) => x.id == el.dataset.sedit);
+      $("#detail-body").innerHTML = `<textarea id="sedit-text" style="width:100%;min-height:55vh;font:inherit;padding:10px;border-radius:10px;background:var(--bg2,#111);color:inherit;border:1px solid var(--line,#333)">${esc(ap.body || "")}</textarea>`;
+      $("#detail-actions").innerHTML = `<button class="btn primary" data-ssave="${ap.id}">Lưu kịch bản</button><button class="btn" data-open="${ap.id}">Huỷ</button>`;
+      return $("#sedit-text").focus();
+    }
+    if (el.dataset.ssave) {
+      const body = $("#sedit-text").value.trim(); if (!body) return;
+      const { error } = await sb.from("approvals").update({ body, note: "Anh Thắng tự sửa sau khi duyệt · " + new Date().toLocaleString("vi-VN") }).eq("id", el.dataset.ssave);
+      if (error) return alertBox("Chưa lưu được", error.message);
+      $("#detail").close(); notify?.("Đã lưu kịch bản", "Video gắn kịch bản này sẽ dùng bản mới.");
+      return refreshAll();
+    }
+    if (el.dataset.sjarvis) {
+      const note = $("#decide-note")?.value?.trim();
+      if (!note) { $("#decide-note").focus(); $("#decide-note").placeholder = "Ghi ý cần thêm/sửa trước khi bấm"; return; }
+      await sb.from("approvals").update({ status: "revise", note, processed_at: null, decided_at: new Date().toISOString() }).eq("id", el.dataset.sjarvis);
+      $("#detail").close(); kickScripts();
+      notify?.("Jarvis đang sửa kịch bản", "Bản mới sẽ vào Hộp duyệt. Duyệt xong, video tự chuyển sang bản mới.");
+      return refreshAll();
     }
     if (el.dataset.decide) {
       const [id, status] = el.dataset.decide.split(":");
@@ -1452,6 +1473,12 @@ ${r}
       await sb.from("approvals").update({ status, note, decided_at: new Date().toISOString() }).eq("id", id);
       $("#detail").close();
       const ap = state.approvals.find((x) => x.id == id);
+      if (ap?.kind === "script" && status === "approved" && ap.revise_of) {
+        // bản sửa được duyệt: chuyển các video đang gắn bản cũ sang bản mới
+        const chain = []; let cur = ap;
+        while (cur?.revise_of && !chain.includes(cur.revise_of)) { chain.push(cur.revise_of); cur = state.approvals.find((x) => x.id == cur.revise_of); }
+        if (chain.length) await sb.from("productions").update({ script_id: ap.id }).in("script_id", chain);
+      }
       if ((ap?.kind === "ideas" && status === "approved") || status === "revise") kickScripts();
       return refreshAll();
     }
@@ -1531,7 +1558,7 @@ ${r}
           ${ST[a.status] ? ` · <b class="${ST[a.status][1]}">${ST[a.status][0]}</b>` : ""}</span>
         </div>
         ${a.status === "queued" || a.status === "writing" ? `<span class="status-running" style="font-size:13px">Jarvis đang viết…</span>`
-          : `<button class="btn sm ${a.status === "pending" ? "primary" : ""}" data-open="${a.id}">${a.status === "pending" ? "Xem & duyệt" : "Xem"}</button>`}
+          : `<button class="btn sm ${a.status === "pending" ? "primary" : ""}" data-open="${a.id}">${a.status === "pending" ? "Xem & duyệt" : a.kind === "script" && a.status === "approved" ? "Xem & sửa" : "Xem"}</button>`}
       </article>`).join("") : `<div class="empty">${state.inbox === "pending" ? "Không có gì chờ duyệt." : "Chưa có mục nào."}</div>`;
   }
 
@@ -1636,6 +1663,15 @@ ${r}
       return $("#detail").showModal();
     }
     const isScript = approval?.kind === "script";
+    if (isScript && approval.status === "approved") {
+      const used = state.prods?.filter((p) => p.script_id === approval.id) || [];
+      $("#detail-actions").innerHTML = `
+        <p class="muted" style="width:100%;margin:0 0 6px">Kịch bản đã duyệt${used.length ? ` · đang dùng cho video: ${used.map((p) => esc(p.title)).join(", ")}` : ""}. Sửa xong video dùng bản mới.</p>
+        <input id="decide-note" placeholder="Ý cần thêm/sửa, ví dụ: thêm ý đệm giặt được, đổi hook sang con số 2000km">
+        <button class="btn primary" data-sjarvis="${approval.id}">Nhờ Jarvis sửa</button>
+        <button class="btn" data-sedit="${approval.id}">Tự sửa</button>`;
+      return $("#detail").showModal();
+    }
     $("#detail-actions").innerHTML = approval ? `
       <input id="decide-note" placeholder="${isScript ? "Ghi chỗ cần sửa, ví dụ: hook dùng con số 1.700km, bỏ đoạn 3" : "Chọn ý tưởng nào? ví dụ: chọn ý 2 và 5 (để trống = 3 ý đầu)"}">
       <button class="btn primary" data-decide="${approval.id}:approved">${isScript ? "Duyệt kịch bản" : "Duyệt & viết kịch bản"}</button>
