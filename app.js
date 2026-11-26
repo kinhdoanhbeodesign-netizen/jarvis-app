@@ -911,7 +911,9 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
   }[p.stage] || "");
   function pipeHint(p) {
     const st = p.pipe?.status;
-    if (st === "running") return `⚙️ Đang dựng ${p.pipe.pct ?? 0}%${p.pipe.step ? ` · ${p.pipe.step}` : ""}`;
+    if (st === "running") return `⚙️ Đang ${p.pipe.mode === "transcribe" ? "chép lời" : "dựng"} ${p.pipe.pct ?? 0}%${p.pipe.step ? ` · ${p.pipe.step}` : ""}`;
+    if (st === "transcript") return "📝 Đã chép lời · mở để sửa và duyệt lời thoại";
+    if (st === "queued" && p.pipe.mode === "transcribe") return "⏳ Chờ máy chép lời (tự chạy mỗi giờ 7h–23h)";
     if (st === "error") return `⚠️ Máy dựng lỗi · mở để dựng lại`;
     if (st === "done") return "Có bản dựng · chuyển sang Duyệt";
     return "⏳ Chờ máy dựng (tự chạy mỗi giờ 7h–23h)";
@@ -1012,6 +1014,7 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
       const prev = pipeSeen.get(p.id); const st = p.pipe?.status;
       if (prev && prev !== st) {
         if (prev === "running" && st === "done") notify(`🎬 Dựng xong: ${p.title}`, p.audit?.verdict === "pass" ? "Tự duyệt đạt. Mở để xem bản dựng." : "Đã có bản dựng, mở để xem và duyệt.", p.id);
+        if (st === "transcript") notify(`📝 Đã chép lời: ${p.title}`, "Mở để sửa lời thoại, gạch câu hỏng rồi duyệt để dựng.", p.id);
         if (st === "error") notify(`⚠️ Máy dựng lỗi: ${p.title}`, String(p.pipe?.error || "").split("Log:")[0].slice(0, 160), p.id, true);
       }
       pipeSeen.set(p.id, st || "none");
@@ -1057,7 +1060,12 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
       h += `<div class="ppipe ${st === "error" ? "err" : ""}" id="p-pipebox"><b>${esc(pipeHint(p))}</b>${st === "running" ? pbar(p, true) : ""}
         ${st === "error" ? `<div class="muted" style="margin-top:4px">${esc(p.pipe.error || "")}</div>` : ""}
         ${p.pipe?.at ? `<div class="muted" style="font-size:12px;margin-top:4px">Cập nhật ${fmt(p.pipe.step_at || p.pipe.at)}${p.pipe.n ? ` · lần dựng ${p.pipe.n}` : ""}${p.pipe.run ? ` · <a href="${esc(p.pipe.run)}" target="_blank" rel="noopener">nhật ký</a>` : ""}</div>` : ""}
-        ${p.stage === "dung" && st !== "running" ? `<button class="btn sm" type="button" data-prequeue="1" style="margin-top:8px">${st === "error" || st === "done" ? "Dựng lại" : "Đưa vào hàng chờ ngay"}</button>` : ""}</div>`;
+        ${p.stage === "dung" && st !== "running" ? `<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn sm" type="button" data-prequeue="1">${st === "error" || st === "done" ? "Dựng lại" : "Đưa vào hàng chờ ngay"}</button><button class="btn sm" type="button" data-prequeue="transcribe">Chép lời trước để sửa</button></div>` : ""}</div>`;
+    }
+    if (p.transcript?.clips?.length) {
+      const n = p.transcript.clips.reduce((a, c) => a + (c.sentences?.length || 0), 0);
+      const ed = p.transcript.clips.reduce((a, c) => a + (c.sentences || []).filter((x) => x.drop || x.t !== x.t0).length, 0);
+      h += `<button class="btn ${p.pipe?.status === "transcript" ? "primary" : ""} sm full" type="button" data-ptr="1" style="margin:0 0 10px">📝 Lời thoại · ${n} câu${ed ? ` · đã sửa ${ed}` : ""} · ${p.transcript.status === "approved" ? "đã duyệt" : "chờ anh sửa"}</button>`;
     }
     if (p.output_url) h += `<div class="row" style="margin:0 0 10px;gap:8px;flex-wrap:wrap"><a class="btn primary sm" style="display:inline-flex" href="${esc(p.output_url)}" target="_blank" rel="noopener">▶ Xem bản dựng</a>${p.audit?.sheet_url ? `<a class="btn sm" style="display:inline-flex" href="${esc(p.audit.sheet_url)}" target="_blank" rel="noopener">Lưới khung hình</a>` : ""}</div>`;
     const a = p.audit;
@@ -1070,6 +1078,19 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
         <div class="muted" style="font-size:12px;margin-top:6px">${[c.duration_s != null ? `${c.duration_s}s` : "", c.lufs != null ? `${c.lufs} LUFS` : "", c.speech_match != null ? `khớp lời ${Math.round(c.speech_match * 100)}%` : "", c.fillers_cut != null ? `cắt ${c.fillers_cut} từ đệm` : "", c.horizontal_share != null ? `footage ngang ${Math.round(c.horizontal_share * 100)}%` : "", c.music ? esc(c.music) : ""].filter(Boolean).join(" · ")}</div></div>`;
     }
     return h;
+  }
+  function openTranscript(id) {
+    const p = state.prods.find((x) => x.id == id); const T = p?.transcript; if (!T) return;
+    const KIND = { review: "review", doc: "dọc", ngang: "ngang", khac: "khác" };
+    $("#detail-title").textContent = "Lời thoại · " + p.title;
+    $("#detail-body").innerHTML = `<div style="white-space:normal">
+      <p class="muted" style="margin:0 0 10px">Máy đã nghe từng clip và chép lời. Anh sửa chữ cho đúng lời mình nói (máy giữ mốc thời gian, chữ đã sửa dùng làm phụ đề). Câu nói hỏng, nói dở hoặc nói lặp thì tick <b>Bỏ</b>: máy sẽ không dùng câu đó.</p>
+      ${T.clips.map((c, ci) => `<details class="trclip" ${c.sentences?.length ? "open" : ""}><summary><b>${esc(c.name)}</b> <span class="muted">· ${KIND[c.kind] || c.kind || ""} · ${Number(c.dur || 0).toFixed(0)}s · ${c.sentences?.length || 0} câu${c.sentences?.length ? "" : " (không có lời)"}</span></summary>
+        ${(c.sentences || []).map((x) => `<div class="trrow ${x.drop ? "drop" : ""}"><span class="trt">${Number(x.s).toFixed(1)}s</span><textarea data-trk="${ci}.${x.k}" rows="2">${esc(x.t)}</textarea><label class="trd"><input type="checkbox" data-trd="${ci}.${x.k}" ${x.drop ? "checked" : ""}>Bỏ</label></div>`).join("")}</details>`).join("")}
+    </div>`;
+    $("#detail-actions").innerHTML = `<button class="btn" data-prod="${p.id}">Quay lại</button><button class="btn" data-trsave="0">Lưu nháp</button><button class="btn primary" data-trsave="1">Duyệt lời & dựng</button>`;
+    $("#detail-body").addEventListener("change", (e) => { const cb = e.target.closest("[data-trd]"); if (cb) cb.closest(".trrow").classList.toggle("drop", cb.checked); });
+    if (!$("#detail").open) $("#detail").showModal();
   }
   const localDT = (iso) => { if (!iso) return ""; const d = new Date(new Date(iso).getTime() + 7 * 36e5); return d.toISOString().slice(0, 16); };
 
@@ -1162,7 +1183,27 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
       askNotify();
       const p = state.pedit; const f = readForm();
       if (!f.location && !p.location) { alertBox("Chưa chọn footage", "Chọn địa điểm footage trên Drive trước."); return true; }
-      await sb.from("productions").update({ ...f, edit_mode: "cloud", pipe: { ...(p.pipe || {}), status: "queued", at: new Date().toISOString(), error: null, step: null }, history: [...(p.history || []), { at: new Date().toISOString(), t: "Đưa vào hàng chờ máy dựng" }], updated_at: new Date().toISOString() }).eq("id", p.id);
+      const tr = ds.prequeue === "transcribe";
+      await sb.from("productions").update({ ...f, edit_mode: "cloud", pipe: { ...(p.pipe || {}), status: "queued", mode: tr ? "transcribe" : null, at: new Date().toISOString(), error: null, step: null, pct: 0 }, history: [...(p.history || []), { at: new Date().toISOString(), t: tr ? "Đưa vào hàng chờ chép lời" : "Đưa vào hàng chờ máy dựng" }], updated_at: new Date().toISOString() }).eq("id", p.id);
+      await loadProd(); renderProd(); openProd(p.id); return true;
+    }
+    if (ds.ptr) { openTranscript(state.pedit.id); return true; }
+    if (ds.trsave) {
+      const p = state.prods.find((x) => x.id == state.pedit.id); const approve = ds.trsave === "1";
+      const clips = p.transcript.clips.map((c, ci) => ({ ...c, sentences: (c.sentences || []).map((x) => {
+        const ta = document.querySelector(`[data-trk="${ci}.${x.k}"]`), cb = document.querySelector(`[data-trd="${ci}.${x.k}"]`);
+        return { ...x, t: ta ? ta.value.replace(/\s+/g, " ").trim() : x.t, drop: cb ? cb.checked : !!x.drop };
+      }) }));
+      el.disabled = true;
+      const patch = { transcript: { ...p.transcript, clips, status: approve ? "approved" : "draft", edited_at: new Date().toISOString() }, updated_at: new Date().toISOString() };
+      if (approve) {
+        askNotify();
+        Object.assign(patch, { stage: "dung", pipe: { ...(p.pipe || {}), status: "queued", mode: null, error: null, step: null, pct: 0, at: new Date().toISOString() },
+          history: [...(p.history || []), { at: new Date().toISOString(), t: "Anh Thắng duyệt lời thoại, đưa vào hàng chờ dựng" }] });
+      }
+      const { error } = await sb.from("productions").update(patch).eq("id", p.id);
+      if (error) { el.disabled = false; return alertBox("Chưa lưu được", error.message), true; }
+      notify?.(approve ? "Đã duyệt lời thoại" : "Đã lưu nháp lời thoại", approve ? "Máy sẽ dựng theo lời anh đã sửa, câu gạch bỏ không dùng." : "");
       await loadProd(); renderProd(); openProd(p.id); return true;
     }
     if (ds.pslot) { $("#p-at").value = localDT(ds.pslot); return true; }
