@@ -893,8 +893,9 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
 
   async function loadProd() {
     const { data, error } = await sb.from("productions").select("*").order("updated_at", { ascending: false }).limit(300);
-    if (!error) state.prods = data || [];
+    if (!error) { state.prods = data || []; watchProd(state.prods); }
     renderProdBadge();
+    livePipe();
   }
   function renderProdBadge() {
     const n = state.prods.filter((p) => p.stage === "duyet").length;
@@ -910,7 +911,7 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
   }[p.stage] || "");
   function pipeHint(p) {
     const st = p.pipe?.status;
-    if (st === "running") return `⚙️ Máy dựng đang chạy${p.pipe.step ? `: ${p.pipe.step}` : ""}`;
+    if (st === "running") return `⚙️ Đang dựng ${p.pipe.pct ?? 0}%${p.pipe.step ? ` · ${p.pipe.step}` : ""}`;
     if (st === "error") return `⚠️ Máy dựng lỗi · mở để dựng lại`;
     if (st === "done") return "Có bản dựng · chuyển sang Duyệt";
     return "⏳ Chờ máy dựng (tự chạy mỗi giờ 7h–23h)";
@@ -920,6 +921,7 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
       <span class="pc-t">${esc(p.title)}</span>
       <span class="pc-m">${vtTag(p.vtype)}${p.location ? `<span class="muted">📍 ${esc(p.location)}</span>` : ""}</span>
       <span class="pc-h ${p.pipe?.status === "error" || p.audit?.verdict === "fix" ? "status-error" : ""}">${esc(nextHint(p))}</span>
+      ${p.pipe?.status === "running" && p.stage === "dung" ? pbar(p) : ""}
       <span class="pc-d muted">${fmt(p.updated_at)}</span></button>`;
 
   function freeScripts() {
@@ -996,11 +998,63 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
     cands.sort((a, c) => a.score - c.score);
     return cands[0] ? { at: new Date(cands[0].t).toISOString(), net: main } : null;
   }
+  function pbar(p, big) {
+    const pct = Math.max(0, Math.min(100, Number(p.pipe?.pct ?? 0)));
+    const started = p.pipe?.started || p.pipe?.at;
+    const mins = started ? Math.max(0, Math.round((Date.now() - new Date(started).getTime()) / 60000)) : 0;
+    const eta = pct >= 5 && mins > 0 ? Math.max(1, Math.round(mins * (100 - pct) / pct)) : null;
+    return `<span class="pbar ${big ? "big" : ""}"><i style="width:${pct}%"></i></span>${big ? `<span class="muted" style="font-size:12px">${pct}% · đã chạy ${mins} phút${eta ? ` · còn khoảng ${eta} phút` : ""}</span>` : ""}`;
+  }
+  // Theo dõi máy dựng: cập nhật tại chỗ và báo khi xong/lỗi
+  const pipeSeen = new Map(); let pipeTimer = null;
+  function watchProd(rows) {
+    for (const p of rows) {
+      const prev = pipeSeen.get(p.id); const st = p.pipe?.status;
+      if (prev && prev !== st) {
+        if (prev === "running" && st === "done") notify(`🎬 Dựng xong: ${p.title}`, p.audit?.verdict === "pass" ? "Tự duyệt đạt. Mở để xem bản dựng." : "Đã có bản dựng, mở để xem và duyệt.", p.id);
+        if (st === "error") notify(`⚠️ Máy dựng lỗi: ${p.title}`, String(p.pipe?.error || "").split("Log:")[0].slice(0, 160), p.id, true);
+      }
+      pipeSeen.set(p.id, st || "none");
+    }
+    // cập nhật khung tiến trình trong chi tiết đang mở mà không xoá chữ anh đang gõ
+    const box = $("#p-pipebox");
+    if (box && state.pedit?.id) {
+      const cur = state.prods.find((x) => x.id === state.pedit.id);
+      if (cur && cur.stage === "dung") { const tmp = document.createElement("div"); tmp.innerHTML = pipePanel(cur); const nb = tmp.querySelector("#p-pipebox"); if (nb) box.replaceWith(nb); }
+      else if (cur && cur.stage !== state.pedit.stage) openProd(cur.id);
+    }
+  }
+  function livePipe() {
+    const running = state.prods.some((p) => p.pipe?.status === "running" || p.pipe?.status === "queued");
+    if (running && !pipeTimer) pipeTimer = setInterval(async () => { await loadProd(); if (state.view === "prod") renderProd(); }, 15000);
+    if (!running && pipeTimer) { clearInterval(pipeTimer); pipeTimer = null; }
+  }
+  function askNotify() {
+    try { if ("Notification" in window && Notification.permission === "default") Notification.requestPermission(); } catch (e) { /* trình duyệt không hỗ trợ */ }
+  }
+  function notify(title, body, prodId, isErr) {
+    const t = document.createElement("div");
+    t.className = "toast" + (isErr ? " err" : "");
+    t.innerHTML = `<b>${esc(title)}</b><span>${esc(body || "")}</span><div class="row" style="margin:6px 0 0;gap:6px"><button class="btn sm primary" data-prod="${prodId}">Mở</button><button class="btn sm" data-toastx="1">Đóng</button></div>`;
+    let box = $("#toasts");
+    if (!box) { box = Object.assign(document.createElement("div"), { id: "toasts" }); box.setAttribute("popover", "manual"); document.body.appendChild(box); }
+    box.appendChild(t);
+    try { if (box.showPopover) { if (box.matches(":popover-open")) box.hidePopover(); box.showPopover(); } } catch (e) { /* trình duyệt cũ: vẫn hiện như thường */ }
+    setTimeout(() => { t.remove(); if (!box.children.length) try { box.hidePopover(); } catch (e) { /* bỏ qua */ } }, 60000);
+    try { navigator.vibrate && navigator.vibrate(isErr ? [80, 60, 80] : 120); } catch (e) { /* bỏ qua */ }
+    try {
+      if ("Notification" in window && Notification.permission === "granted") {
+        const opt = { body: body || "", icon: "icons/icon-192.png", tag: "prod-" + prodId };
+        if (navigator.serviceWorker?.ready) navigator.serviceWorker.ready.then((r) => r.showNotification(title, opt)).catch(() => new Notification(title, opt));
+        else new Notification(title, opt);
+      }
+    } catch (e) { /* bỏ qua */ }
+  }
   function pipePanel(p) {
     let h = "";
     if (p.edit_mode === "cloud" && p.stage === "dung") {
       const st = p.pipe?.status;
-      h += `<div class="ppipe ${st === "error" ? "err" : ""}"><b>${esc(pipeHint(p))}</b>
+      h += `<div class="ppipe ${st === "error" ? "err" : ""}" id="p-pipebox"><b>${esc(pipeHint(p))}</b>${st === "running" ? pbar(p, true) : ""}
         ${st === "error" ? `<div class="muted" style="margin-top:4px">${esc(p.pipe.error || "")}</div>` : ""}
         ${p.pipe?.at ? `<div class="muted" style="font-size:12px;margin-top:4px">Cập nhật ${fmt(p.pipe.step_at || p.pipe.at)}${p.pipe.n ? ` · lần dựng ${p.pipe.n}` : ""}${p.pipe.run ? ` · <a href="${esc(p.pipe.run)}" target="_blank" rel="noopener">nhật ký</a>` : ""}</div>` : ""}
         ${p.stage === "dung" && st !== "running" ? `<button class="btn sm" type="button" data-prequeue="1" style="margin-top:8px">${st === "error" || st === "done" ? "Dựng lại" : "Đưa vào hàng chờ ngay"}</button>` : ""}</div>`;
@@ -1098,12 +1152,14 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
   async function prodClick(el) {
     const ds = el.dataset;
     if (ds.view && $("#detail").open) $("#detail").close();
-    if (ds.prod) { openProd(ds.prod); return true; }
+    if (ds.toastx) { el.closest(".toast")?.remove(); const bx = $("#toasts"); if (bx && !bx.children.length) try { bx.hidePopover(); } catch (e) { /* bỏ qua */ } return true; }
+    if (ds.prod) { el.closest(".toast")?.remove(); if (state.view !== "prod") showView("prod"); openProd(ds.prod); return true; }
     if (el.id === "p-new") { openProd(null); return true; }
     if (ds.pfrom) { const a = state.approvals.find((x) => x.id == ds.pfrom); const tt = a.title.replace(/^Kịch bản:\s*/i, ""); const isRv = /review|đánh giá|trên tay|unbox/i.test(tt); openProd(null, { script_id: a.id, title: tt, ...(isRv ? { vtype: "review", edit_mode: "capcut" } : {}) }); return true; }
     if (ds.pst) { state.pstage = ds.pst; renderProd(); return true; }
     if (el.id === "p-loadloc" || el.id === "p-reloc") { el.disabled = true; el.textContent = "Đang đọc Drive…"; await loadDriveLocs(true); $("#p-locbox").innerHTML = locOptions(state.pedit); return true; }
     if (ds.prequeue) {
+      askNotify();
       const p = state.pedit; const f = readForm();
       if (!f.location && !p.location) { alertBox("Chưa chọn footage", "Chọn địa điểm footage trên Drive trước."); return true; }
       await sb.from("productions").update({ ...f, edit_mode: "cloud", pipe: { ...(p.pipe || {}), status: "queued", at: new Date().toISOString(), error: null, step: null }, history: [...(p.history || []), { at: new Date().toISOString(), t: "Đưa vào hàng chờ máy dựng" }], updated_at: new Date().toISOString() }).eq("id", p.id);
@@ -1111,7 +1167,7 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
     }
     if (ds.pslot) { $("#p-at").value = localDT(ds.pslot); return true; }
     if (ds.psave) { el.disabled = true; await saveProd(0); el.disabled = false; return true; }
-    if (ds.pmove) { el.disabled = true; await saveProd(Number(ds.pmove)); el.disabled = false; return true; }
+    if (ds.pmove) { askNotify(); el.disabled = true; await saveProd(Number(ds.pmove)); el.disabled = false; return true; }
     if (ds.pdel) {
       if (!confirm(`Xoá video "${state.pedit.title}" khỏi bảng Sản xuất? Footage và bản dựng trên Drive không bị xoá.`)) return true;
       await sb.from("productions").delete().eq("id", state.pedit.id); $("#detail").close(); await loadProd(); renderProd(); return true;

@@ -416,3 +416,12 @@ a.card.ttv{text-decoration:none;color:inherit;padding:10px 12px;background:#0A12
 .paudit .ph{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .paudit ul{margin:4px 0 0 18px;padding:0}
 .paudit li{margin:3px 0}
+.pbar{display:block;height:6px;border-radius:99px;background:#16233a;overflow:hidden;margin:6px 0 2px}
+.pbar.big{height:10px;margin:8px 0 4px}
+.pbar i{display:block;height:100%;background:linear-gradient(90deg,#1fb86f,var(--g));border-radius:99px;transition:width .8s ease}
+#toasts{position:fixed;inset:auto 16px 16px auto;margin:0;padding:0;border:0;background:transparent;overflow:visible;z-index:9999;display:flex;flex-direction:column;gap:10px;max-width:min(360px,calc(100vw - 32px))}
+.toast{background:#0E1829;border:1px solid var(--g-line);border-radius:14px;padding:12px 14px;box-shadow:0 10px 30px rgba(0,0,0,.45);display:flex;flex-direction:column;gap:4px;font-size:13.5px;color:var(--text2);animation:tin .25s ease}
+.toast b{color:var(--text);font-size:14px}
+.toast.err{border-color:#7a2a2a}
+@keyframes tin{from{transform:translateY(12px);opacity:0}to{transform:none;opacity:1}}
+@media (max-width:820px){#toasts{inset:auto 12px 84px 12px;width:auto;max-width:none}}
