@@ -740,13 +740,14 @@
       <p class="plan-sum">${esc(p.summary)}</p>
       <div class="plan-grid">${(p.content || []).map((c, i) => `<div class="pc">
         <div class="pc-h"><span class="tag" style="color:${PL[c.platform === "youtube_shorts" ? "youtube" : c.platform]?.c || "inherit"}">${PLN[c.platform] || esc(c.platform)}</span><span class="muted">${esc(c.day || "")} · ${esc(c.duration || "")}</span></div>
-        <b>${esc(c.title)}</b>
+        <b>${c.new ? '<span class="pill-s">Mới</span> ' : ""}${c.made ? '<span class="pill-s ok">Đang làm</span> ' : ""}${esc(c.title)}</b>
         ${c.hook ? `<span class="pc-hook">“${esc(c.hook)}”</span>` : ""}
         <span class="muted pc-why">${esc(c.why || "")}</span>
         <div class="pc-f"><span class="muted">${esc(c.format || "")}${c.effort ? " · " + esc(c.effort) : ""}</span>
           ${c.evidence && /^https?:/.test(c.evidence) ? `<a href="${esc(c.evidence)}" target="_blank" rel="noopener">Nguồn</a>` : ""}
-          <button class="btn sm primary" data-planmake="${k}:${i}">Làm video này</button></div>
-      </div>`).join("")}</div></div>`;
+          <span class="row" style="gap:6px;flex-wrap:wrap">${c.made ? "" : `<button class="btn sm ghost" data-planskip="${k}:${i}:skip" title="Không hợp lúc này, Jarvis gợi ý video khác">Bỏ qua</button><button class="btn sm ghost" data-planskip="${k}:${i}:delete" title="Không phù hợp, xoá và gợi ý video khác">Xoá</button>`}<button class="btn sm primary" data-planmake="${k}:${i}">${c.made ? "Viết lại kịch bản" : "Làm video này"}</button></span></div>
+      </div>`).join("")}</div>
+      <p class="muted" style="margin:10px 0 0;font-size:13px">Jarvis cập nhật danh sách mỗi ngày lúc 13:30 theo trend và số liệu vừa truy xuất${p.updated_at ? ` · lần cuối ${fmt(p.updated_at)}` : ""}. Đề xuất luôn được đối chiếu với video đã đăng trên kênh để không trùng.</p></div>`;
   }
   function openPlanMake(key) {
     const [k, i] = key.split(":"); const c = getJSON("weekly_plan", {})[k]?.content?.[+i]; if (!c) return;
@@ -772,11 +773,27 @@ Trải nghiệm thật của mình (anh sửa lại): đã đi / đã dùng ... 
       .map((v) => { const vpd = (v.views || 0) / ago(v.published_at); const x = v.followers ? v.views / v.followers : 0; return { ...v, vpd, x, score: vpd * (x >= 3 ? 1.6 : 1) }; })
       .sort((a, b) => b.score - a.score).slice(0, 30);
   }
+  const thumbOf = (v) => v.platform === "youtube" ? `https://i.ytimg.com/vi/${encodeURIComponent(v.video_id)}/mqdefault.jpg` : v.thumb || "";
+  const embedOf = (v) => v.platform === "youtube" ? `https://www.youtube.com/embed/${encodeURIComponent(v.video_id)}?autoplay=1&playsinline=1&rel=0`
+    : v.platform === "tiktok" ? `https://www.tiktok.com/player/v1/${encodeURIComponent(v.video_id)}?autoplay=1&rel=0`
+    : `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(v.url)}&show_text=false&autoplay=true`;
+  function openPlayer(key) {
+    const [p, id] = key.split(":");
+    const v = (state.d?.vids || []).find((x) => x.platform === p && x.video_id === id); if (!v) return;
+    const vert = p === "tiktok" || (v.duration_s && v.duration_s <= 75) || /shorts/.test(v.url || "");
+    $("#detail-title").textContent = (v.title || "Video").slice(0, 90);
+    $("#detail-body").innerHTML = `<div class="player ${vert ? "vert" : ""}"><iframe src="${esc(embedOf(v))}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>
+      <p class="muted" style="margin:8px 0 0;white-space:normal">${esc(v.channel_name || "")} · ${nf(v.views)} view · ${durTxt(v.duration_s)} · <a href="${esc(v.url)}" target="_blank" rel="noopener">Mở trên ${PL[p].n}</a></p>`;
+    $("#detail-actions").innerHTML = `<button class="btn primary" data-hotmake="${p}:${esc(id)}">Làm video này</button>`;
+    $("#detail").showModal();
+    $("#detail").addEventListener("close", () => { const f = $("#detail-body iframe"); if (f) f.src = "about:blank"; }, { once: true });
+  }
   const hotCard = (v, i, compact) => `
     <article class="card hot">
       <span class="rank">${i + 1}</span>
+      ${compact ? "" : `<button class="hthumb ${v.platform}" data-hotplay="${v.platform}:${esc(v.video_id)}" aria-label="Xem video">${thumbOf(v) ? `<img src="${esc(thumbOf(v))}" alt="" loading="lazy">` : ""}<span class="play">▶</span></button>`}
       <div class="body">
-        <span class="title"><a href="${esc(v.url)}" target="_blank" rel="noopener">${esc((v.title || "(không tiêu đề)").slice(0, compact ? 80 : 130))}</a></span>
+        <span class="title"><a href="#" data-hotplay="${v.platform}:${esc(v.video_id)}">${esc((v.title || "(không tiêu đề)").slice(0, compact ? 80 : 130))}</a></span>
         <span class="meta"><span class="tag" style="color:${PL[v.platform].c}">${PL[v.platform].n}</span>${esc(v.channel_name || "")} · <b style="color:var(--text)">${short(v.views)}</b> view · <b class="up">${short(v.vpd)}/ngày</b>${compact ? "" : ` · ${durTxt(v.duration_s)} · đăng ${fmt(v.published_at).replace(/, \d\d:\d\d$/, "")}`}${v.x >= 3 ? ` <span class="pill-s">Vượt mặt ×${dec(v.x, 1)}</span>` : ""}</span>
       </div>
       ${compact ? `<button class="btn sm" data-hotmake="${v.platform}:${v.video_id}">Làm</button>` : `<div class="hot-act"><button class="btn sm primary" data-hotmake="${v.platform}:${v.video_id}">Làm video này</button><button class="btn sm" data-hothide="${v.platform}:${v.video_id}">Bỏ qua</button></div>`}
@@ -807,6 +824,54 @@ Góc của mình (anh sửa lại): mình đã đi / đã dùng ... ; con số t
 Không chép nội dung video gốc, chỉ học cách đặt vấn đề và độ dài.</textarea>`;
     $("#detail-actions").innerHTML = '<button class="btn primary" id="idea-send">Gửi cho Jarvis viết kịch bản</button>';
     $("#detail").showModal();
+  }
+
+  // ======================= CHUYẾN ĐI =======================
+  async function loadTrips() {
+    const { data } = await sb.from("trips").select("*").order("start_date", { ascending: true }).limit(50);
+    state.trips = data ?? [];
+  }
+  const TRIP_ST = { queued: ["Chờ Jarvis lên kế hoạch", "muted"], planning: ["Jarvis đang lên kế hoạch… (1–2 phút)", "status-running"], done: ["Đã có kế hoạch", "status-ok"], error: ["Lỗi – bấm để thử lại", "status-error"] };
+  function renderTrips() {
+    const box = $("#trips-box"); if (!box) return;
+    const list = state.trips || [];
+    box.innerHTML = `<div class="panel"><h3 style="margin-top:0">Thêm chuyến đi sắp tới</h3>
+      <div class="tripform">
+        <label>Điểm đến<input id="t-place" placeholder="Ví dụ: Hà Giang – Mã Pì Lèng"></label>
+        <label>Xuất phát từ<input id="t-from" placeholder="Hà Nội"></label>
+        <label>Ngày đi<input id="t-start" type="date"></label>
+        <label>Ngày về<input id="t-end" type="date"></label>
+        <label>Đi cùng<input id="t-people" placeholder="Vợ và 2 con"></label>
+        <label>Xe<input id="t-car" placeholder="Ví dụ: Mazda CX-5"></label>
+        <label class="full">Ghi chú<input id="t-note" placeholder="Muốn đi đèo đẹp, tránh lái đêm, có review đồ xe…"></label>
+      </div>
+      <button class="btn primary" id="t-add" style="margin-top:10px">Jarvis lên kế hoạch</button>
+      <p class="muted" style="margin:8px 0 0;font-size:13px">Jarvis tra cứu thời tiết, đường xá, cung đường đẹp, rồi lập lịch trình theo ngày, điểm quay đẹp, phân tích nội dung có thể sản xuất và danh sách video ngắn/dài nên làm trước (không trùng video đã có trên kênh).</p></div>
+      <div class="list" style="margin-top:14px">${list.length ? list.map((t) => `<article class="card">
+        <div class="body"><span class="title">${esc(t.place)}</span>
+        <span class="meta">${t.start_date ? `${fmtD(t.start_date)}${t.end_date ? " → " + fmtD(t.end_date) : ""} · ` : ""}${t.videos?.length ? `${t.videos.length} video gợi ý · ` : ""}<b class="${TRIP_ST[t.status]?.[1] || ""}">${TRIP_ST[t.status]?.[0] || esc(t.status)}</b></span></div>
+        <button class="btn sm ${t.status === "done" ? "primary" : ""}" data-tripopen="${t.id}">${t.status === "error" ? "Thử lại" : "Xem"}</button></article>`).join("") : `<div class="empty">Chưa có chuyến đi nào.</div>`}</div>`;
+  }
+  const fmtD = (d) => { const [y, m, dd] = String(d).slice(0, 10).split("-"); return `${dd}/${m}/${y}`; };
+  function openTrip(id) {
+    const t = (state.trips || []).find((x) => x.id == id); if (!t) return;
+    $("#detail-title").textContent = `Chuyến đi: ${t.place}`;
+    const vids = t.videos || [];
+    $("#detail-body").innerHTML = (t.status === "done" ? md(t.plan || "") : `<p class="muted">${TRIP_ST[t.status]?.[0] || ""}${t.error ? ": " + esc(t.error) : ""}</p>`) +
+      (vids.length ? `<h3>Video nên làm trước</h3><div class="list">${vids.map((v, i) => `<div class="card" style="display:block;white-space:normal"><b>${esc(v.title)}</b> <span class="tag">${esc(v.type || "")}</span> <span class="tag">${PLN[v.platform] || esc(v.platform || "")}</span>${v.hook ? `<p class="pc-hook" style="margin:6px 0">“${esc(v.hook)}”</p>` : ""}${v.outline ? `<p class="muted" style="margin:4px 0;white-space:pre-wrap">${esc(v.outline)}</p>` : ""}${v.shots ? `<p style="margin:4px 0"><b>Cảnh cần quay:</b> ${esc(v.shots)}</p>` : ""}${v.why ? `<p class="muted" style="margin:4px 0">${esc(v.why)}</p>` : ""}<button class="btn sm primary" data-tripvid="${t.id}:${i}">Viết kịch bản</button></div>`).join("")}</div>` : "");
+    $("#detail-actions").innerHTML = t.status === "planning" ? "" : `<button class="btn" data-triprun="${t.id}">${t.status === "done" ? "Lên lại kế hoạch" : "Jarvis lên kế hoạch"}</button><button class="btn danger" data-tripdel="${t.id}">Xoá chuyến đi</button>`;
+    if (!$("#detail").open) $("#detail").showModal();
+  }
+  async function runTrip(id) {
+    await sb.from("trips").update({ status: "queued", error: null, updated_at: new Date().toISOString() }).eq("id", id);
+    callRunner({ trip_run: id }).catch(() => {});
+    await loadTrips(); renderTrips();
+    const poll = setInterval(async () => {
+      if (state.view !== "trips") return clearInterval(poll);
+      await loadTrips(); renderTrips();
+      const t = state.trips.find((x) => x.id == id);
+      if (!t || t.status === "done" || t.status === "error") { clearInterval(poll); if (t?.status === "done") notify?.(`Đã có kế hoạch chuyến ${t.place}`, "Bấm Xem để mở lịch trình và video nên làm."); }
+    }, 10000);
   }
 
   // ======================= SỰ KIỆN MỚI =======================
@@ -878,8 +943,52 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
       await setGoals(k, prev.map((g) => ({ ...g, id: Math.random().toString(36).slice(2, 9), done: 0, checked: false }))); renderGoals(); renderGoalMini(); return true;
     }
     if (ds.hotp) { state.hotp = ds.hotp; $$("[data-hotp]").forEach((b) => b.classList.toggle("active", b === el)); renderHot(); return true; }
-    if (ds.hotmake) { openHotMake(ds.hotmake); return true; }
-    if (ds.planmake) { openPlanMake(ds.planmake); return true; }
+    if (el.id === "t-add") {
+      const g = (id) => $(id).value.trim();
+      if (!g("#t-place")) { $("#t-place").focus(); return true; }
+      el.disabled = true;
+      const { data, error } = await sb.from("trips").insert({ place: g("#t-place"), from_place: g("#t-from") || null, start_date: g("#t-start") || null, end_date: g("#t-end") || null, people: g("#t-people") || null, vehicle: g("#t-car") || null, note: g("#t-note") || null, status: "queued" }).select("id").single();
+      el.disabled = false;
+      if (error) { alertBox("Chưa lưu được", error.message); return true; }
+      await runTrip(data.id); return true;
+    }
+    if (ds.tripopen) { const t = state.trips.find((x) => x.id == ds.tripopen); if (t?.status === "error") { await runTrip(t.id); return true; } openTrip(ds.tripopen); return true; }
+    if (ds.triprun) { $("#detail").close(); await runTrip(+ds.triprun); return true; }
+    if (ds.tripdel) { if (!confirm("Xoá chuyến đi này?")) return true; await sb.from("trips").delete().eq("id", ds.tripdel); $("#detail").close(); await loadTrips(); renderTrips(); return true; }
+    if (ds.tripvid) {
+      const [tid, i] = ds.tripvid.split(":"); const t = state.trips.find((x) => x.id == tid); const v = t?.videos?.[+i]; if (!v) return true;
+      $("#detail-title").textContent = "Viết kịch bản từ chuyến đi";
+      $("#detail-body").innerHTML = `<p class="muted" style="white-space:normal">Sửa thêm nếu cần rồi gửi. Jarvis viết kịch bản và đưa vào Hộp duyệt.</p><textarea id="idea-text" rows="12">Video từ chuyến đi ${t.place} (${t.start_date ? fmtD(t.start_date) : ""}${t.end_date ? " → " + fmtD(t.end_date) : ""}):
+- Loại: video ${v.type || ""} · Nền tảng: ${PLN[v.platform] || v.platform || ""}
+- Tiêu đề: ${v.title}
+- Hook: ${v.hook || ""}
+- Dàn ý: ${v.outline || ""}
+- Cảnh cần quay: ${v.shots || ""}
+- Vì sao làm trước: ${v.why || ""}
+
+Đây là kịch bản QUAY TRƯỚC cho chuyến đi sắp tới: viết kèm shot list theo từng điểm, câu thoại gợi ý tại chỗ. Trải nghiệm thật sẽ bổ sung sau khi đi.</textarea>`;
+      $("#detail-actions").innerHTML = '<button class="btn primary" id="idea-send">Gửi cho Jarvis viết kịch bản</button>';
+      return true;
+    }
+    if (ds.hotplay) { openPlayer(ds.hotplay); return true; }
+    if (ds.hotmake) { if ($("#detail").open) $("#detail").close(); openHotMake(ds.hotmake); return true; }
+    if (ds.planskip) {
+      const [k, i, mode] = ds.planskip.split(":");
+      const card = el.closest(".pc"); card?.classList.add("busy");
+      el.textContent = "Jarvis đang tìm video khác…"; card?.querySelectorAll("button").forEach((b) => (b.disabled = true));
+      try {
+        const r = await callRunner({ plan_replace: { wk: k, i: +i, mode } });
+        if (r.error) throw new Error(r.error);
+        await refreshAll(); renderGoals();
+        notify?.(mode === "delete" ? "Đã xoá và thay video mới" : "Đã bỏ qua và thay video mới", r.item?.title || "");
+      } catch (e) { card?.classList.remove("busy"); alertBox("Chưa thay được", String(e.message || e)); renderGoals(); }
+      return true;
+    }
+    if (ds.planmake) {
+      const [k, i] = ds.planmake.split(":"); const wp = getJSON("weekly_plan", {});
+      if (wp[k]?.content?.[+i] && !wp[k].content[+i].made) { wp[k].content[+i].made = true; saveJSON("weekly_plan", wp); }
+      openPlanMake(ds.planmake); return true;
+    }
     if (ds.hothide) { const h = getJSON("hot_hidden", []); h.push(ds.hothide); await saveJSON("hot_hidden", h.slice(-500)); renderHot(); renderHotMini(); return true; }
     return false;
   }
@@ -1466,6 +1575,8 @@ ${r}
   document.addEventListener("click", async (e) => {
     const a = e.target.closest("a[data-go]");
     if (a) { e.preventDefault(); if (a.dataset.flt) state.filter = a.dataset.flt; return showView(a.dataset.go); }
+    const hp = e.target.closest("a[data-hotplay]");
+    if (hp) { e.preventDefault(); return openPlayer(hp.dataset.hotplay); }
     const el = e.target.closest("button");
     if (!el) return;
 
@@ -1738,6 +1849,7 @@ ${r}
     if (v === "mine") renderMine();
     if (v === "goals") renderGoals();
     if (v === "hot") renderHot();
+    if (v === "trips") { renderTrips(); loadTrips().then(renderTrips); }
     if (["mine", "goals", "hot"].includes(v) && sb && !state.d) loadDash().then(() => showView(v));
     if (v === "dash") { if (state.d) renderDash(); if (sb) loadDash(); }
     window.scrollTo(0, 0);

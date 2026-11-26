@@ -362,7 +362,9 @@ a.card.ttv{text-decoration:none;color:inherit;padding:10px 12px;background:#0A12
 .pc-hook{font-size:13px;color:var(--g);font-style:italic}
 .pc-why{font-size:12.5px;line-height:1.45}
 .pc-f{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:auto;font-size:12px}
-.pc-f .btn{margin-left:auto}
+.pc-f .btn{margin-left:0}
+.pc-f .row{margin-left:auto;justify-content:flex-end}
+.pc-f .row .btn{width:auto;flex:0 0 auto}
 .aitag{font-style:normal;font-size:10px;font-weight:700;color:#04140C;background:var(--g);border-radius:5px;padding:1px 5px;margin-right:6px;vertical-align:1px}
 .gt em{font-style:normal;font-size:12px;color:var(--muted);line-height:1.4}
 .gt .aitag{align-self:flex-start}
@@ -436,3 +438,18 @@ a.card.ttv{text-decoration:none;color:inherit;padding:10px 12px;background:#0A12
 
 .fbimgs{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:6px}
 .fbimgs img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px}
+
+.hthumb{position:relative;flex:0 0 120px;width:120px;aspect-ratio:16/9;border:0;border-radius:10px;overflow:hidden;background:linear-gradient(135deg,#2a1414,#111);cursor:pointer;padding:0}
+.hthumb.tiktok{flex-basis:68px;width:68px;aspect-ratio:9/16}
+.hthumb img{width:100%;height:100%;object-fit:cover;display:block}
+.hthumb .play{position:absolute;inset:0;display:grid;place-items:center;color:#fff;font-size:20px;text-shadow:0 1px 6px #000}
+.player{position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:12px;overflow:hidden}
+.player.vert{aspect-ratio:9/16;max-width:min(360px,100%);max-height:70vh;margin:0 auto}
+.player iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+.pc.busy{opacity:.55}
+.pill-s.ok{background:#1f5f3a}
+.tripform{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.tripform label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
+.tripform .full{grid-column:1/-1}
+.tripform input{font:inherit;padding:9px 10px;border-radius:10px;border:1px solid var(--line,#333);background:transparent;color:var(--text,inherit)}
+@media (max-width:640px){.tripform{grid-template-columns:1fr}.hthumb{flex-basis:96px;width:96px}}
