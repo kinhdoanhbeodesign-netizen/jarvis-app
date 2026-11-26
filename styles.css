@@ -410,3 +410,9 @@ a.card.ttv{text-decoration:none;color:inherit;padding:10px 12px;background:#0A12
   .pform{grid-template-columns:1fr}
 }
 .pslot{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:13.5px;color:var(--text2);background:#0A1220;border:1px solid var(--g-line);border-radius:10px;padding:8px 10px}
+.ppipe{border:1px solid var(--line2);background:#0A1220;border-radius:12px;padding:10px 12px;margin-bottom:10px;font-size:13.5px}
+.ppipe.err{border-color:#7a2a2a}
+.paudit{border:1px solid var(--line2);border-radius:12px;padding:10px 12px;margin-bottom:12px;font-size:13.5px;color:var(--text2)}
+.paudit .ph{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.paudit ul{margin:4px 0 0 18px;padding:0}
+.paudit li{margin:3px 0}
