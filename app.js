@@ -1088,7 +1088,7 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
       ${T.clips.map((c, ci) => `<details class="trclip" ${c.sentences?.length ? "open" : ""}><summary><b>${esc(c.name)}</b> <span class="muted">· ${KIND[c.kind] || c.kind || ""} · ${Number(c.dur || 0).toFixed(0)}s · ${c.sentences?.length || 0} câu${c.sentences?.length ? "" : " (không có lời)"}</span></summary>
         ${(c.sentences || []).map((x) => `<div class="trrow ${x.drop ? "drop" : ""}"><span class="trt">${Number(x.s).toFixed(1)}s</span><textarea data-trk="${ci}.${x.k}" rows="2">${esc(x.t)}</textarea><label class="trd"><input type="checkbox" data-trd="${ci}.${x.k}" ${x.drop ? "checked" : ""}>Bỏ</label></div>`).join("")}</details>`).join("")}
     </div>`;
-    $("#detail-actions").innerHTML = `<button class="btn" data-prod="${p.id}">Quay lại</button><button class="btn" data-trsave="0">Lưu nháp</button><button class="btn primary" data-trsave="1">Duyệt lời & dựng</button>`;
+    $("#detail-actions").innerHTML = `<button class="btn" data-prod="${p.id}">Quay lại</button><button class="btn" data-trsuggest="1">Jarvis gợi ý câu bỏ</button><button class="btn" data-trsave="0">Lưu nháp</button><button class="btn primary" data-trsave="1">Duyệt lời & dựng</button>`;
     $("#detail-body").addEventListener("change", (e) => { const cb = e.target.closest("[data-trd]"); if (cb) cb.closest(".trrow").classList.toggle("drop", cb.checked); });
     if (!$("#detail").open) $("#detail").showModal();
   }
@@ -1188,6 +1188,27 @@ Không chép nội dung video gốc, chỉ học cách đặt vấn đề và đ
       await loadProd(); renderProd(); openProd(p.id); return true;
     }
     if (ds.ptr) { openTranscript(state.pedit.id); return true; }
+    if (ds.trsuggest) {
+      // gợi ý: câu nói dở (≤3 từ, "…") và các lần nói trước của cùng một ý trong cùng clip → tick Bỏ; anh xem lại rồi bỏ tick nếu sai
+      const W = (t) => t.toLowerCase().normalize("NFC").replace(/[^\p{L}\p{N} ]/gu, " ").split(/\s+/).filter((w) => w && !["ờ", "à", "ừ", "ừm", "thì", "và"].includes(w));
+      const sim = (a, b) => { const A = new Set(a), B = new Set(b); let n = 0; A.forEach((x) => B.has(x) && n++); return (2 * n) / (A.size + B.size || 1); };
+      let n = 0;
+      const p = state.prods.find((x) => x.id == state.pedit.id);
+      p.transcript.clips.forEach((c, ci) => {
+        const rows = (c.sentences || []).map((x) => ({ k: x.k, w: W(document.querySelector(`[data-trk="${ci}.${x.k}"]`)?.value || x.t) }));
+        const same = (r, o) => (r.w.length >= 3 && o.w.slice(0, 3).join(" ") === r.w.slice(0, 3).join(" ")) || sim(r.w, o.w) >= 0.6 || (r.w.length >= 2 && o.w.join(" ").includes(r.w.join(" ")));
+        rows.forEach((r, i) => {
+          // giữ lần nói sau cùng, trừ khi lần sau ngắn hơn hẳn (nói dở) thì giữ lần đầy đủ hơn
+          const dup = rows.slice(i + 1).some((o) => same(r, o) && o.w.length >= r.w.length * 0.8)
+            || rows.slice(0, i).some((o) => same(o, r) && o.w.length >= r.w.length * 1.3);
+          const frag = r.w.length <= 2;
+          const cb = document.querySelector(`[data-trd="${ci}.${r.k}"]`);
+          if (cb && (dup || frag) && !cb.checked) { cb.checked = true; cb.closest(".trrow").classList.add("drop"); n++; }
+        });
+      });
+      notify?.("Jarvis đã gợi ý", n ? `Đã tick Bỏ ${n} câu nói lặp/nói dở. Anh xem lại, bỏ tick câu nào muốn giữ rồi bấm Duyệt.` : "Không thấy câu nào lặp.");
+      return true;
+    }
     if (ds.trsave) {
       const p = state.prods.find((x) => x.id == state.pedit.id); const approve = ds.trsave === "1";
       const clips = p.transcript.clips.map((c, ci) => ({ ...c, sentences: (c.sentences || []).map((x) => {
