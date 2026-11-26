@@ -1530,11 +1530,26 @@ ${r}
       notify?.("Jarvis đang sửa kịch bản", "Bản mới sẽ vào Hộp duyệt. Duyệt xong, video tự chuyển sang bản mới.");
       return refreshAll();
     }
+    if (el.dataset.fbretry) {
+      const a = state.approvals.find((x) => x.id == el.dataset.fbretry); if (!a) return;
+      const meta = { ...(a.meta || {}) }; delete meta.fb_error; delete meta.error;
+      await sb.from("approvals").update({ meta }).eq("id", a.id);
+      $("#detail").close(); notify?.("Jarvis sẽ thử hẹn giờ lại", "Trong vài phút.");
+      return refreshAll();
+    }
+    if (el.dataset.fball) {
+      const ids = state.approvals.filter((a) => a.kind === "fb_post" && a.status === "pending").map((a) => a.id);
+      if (!ids.length) return;
+      el.disabled = true;
+      await sb.from("approvals").update({ status: "approved", decided_at: new Date().toISOString() }).in("id", ids);
+      notify?.(`Đã duyệt ${ids.length} bài Facebook`, "Jarvis đang hẹn giờ đăng thẳng lên Page, xong trong vài phút.");
+      return refreshAll();
+    }
     if (el.dataset.fbok) {
       const body = $("#fb-cap")?.value?.trim(); if (!body) return;
       el.disabled = true;
       await sb.from("approvals").update({ body, status: "approved", decided_at: new Date().toISOString() }).eq("id", el.dataset.fbok);
-      $("#detail").close(); notify?.("Đã duyệt bài Facebook", "Jarvis sẽ đặt lịch giờ vàng trong vòng 1 tiếng (video được ưu tiên giờ đẹp).");
+      $("#detail").close(); notify?.("Đã duyệt bài Facebook", "Jarvis hẹn giờ đăng thẳng lên Page trong vài phút.");
       return refreshAll();
     }
     if (el.dataset.decide) {
@@ -1617,20 +1632,22 @@ ${r}
 
   // ======================= HỘP DUYỆT =======================
   function renderInbox() {
-    const active = ["pending", "queued", "writing", "error"];
+    const active = ["pending", "queued", "writing", "error", "designing"];
     const list = state.approvals.filter((a) => (state.inbox === "pending" ? active.includes(a.status) : !active.includes(a.status)));
     const KIND = { ideas: "Ý tưởng", script: "Kịch bản", fb_post: "Bài ảnh Facebook" };
-    const ST = { approved: ["Đã duyệt", "status-ok"], rejected: ["Từ chối", "status-error"], revise: ["Đang yêu cầu sửa", "muted"], revised: ["Đã có bản sửa", "muted"], error: ["Lỗi – bấm Xem để thử lại", "status-error"] };
-    $("#inbox-list").innerHTML = list.length ? list.map((a) => `
+    const ST = { designing: ["Jarvis đang thiết kế ảnh Canva", "muted"], approved: ["Đã duyệt", "status-ok"], rejected: ["Từ chối", "status-error"], revise: ["Đang yêu cầu sửa", "muted"], revised: ["Đã có bản sửa", "muted"], error: ["Lỗi – bấm Xem để thử lại", "status-error"] };
+    const fbPend = state.inbox === "pending" ? state.approvals.filter((a) => a.kind === "fb_post" && a.status === "pending") : [];
+    $("#inbox-list").innerHTML = (fbPend.length > 1 ? `<div class="card" style="justify-content:space-between"><span><b>${fbPend.length} bài Facebook</b> chờ duyệt</span><button class="btn sm primary" data-fball="1">Duyệt tất cả</button></div>` : "") + (list.length ? list.map((a) => `
       <article class="card">
         <div class="body">
           <span class="title">${esc(a.title)}</span>
           <span class="meta"><span class="tag">${KIND[a.kind] || esc(a.kind)}</span>${a.version > 1 ? `<span class="tag">Bản ${a.version}</span>` : ""}${fmt(a.created_at)}
-          ${ST[a.status] ? ` · <b class="${ST[a.status][1]}">${ST[a.status][0]}</b>` : ""}${a.kind === "fb_post" && a.status === "approved" ? ` · ${a.meta?.scheduled_at ? `đăng ${fmt(a.meta.scheduled_at)}` : a.meta?.error ? `<b class="status-error">lỗi đặt lịch</b>` : "chờ Jarvis đặt lịch"}` : ""}</span>
+          ${ST[a.status] ? ` · <b class="${ST[a.status][1]}">${ST[a.status][0]}</b>` : ""}${a.kind === "fb_post" && a.status === "pending" && a.meta?.date ? ` · dự kiến ${a.meta.date.slice(8, 10)}/${a.meta.date.slice(5, 7)} ${a.meta.time || ""}` : ""}${a.kind === "fb_post" && a.status === "approved" ? ` · ${a.meta?.fb_post_id ? `hẹn đăng ${fmt(a.meta.scheduled_at)}` : a.meta?.fb_error ? `<b class="status-error">lỗi hẹn giờ</b>` : "Jarvis đang hẹn giờ"}` : ""}</span>
         </div>
         ${a.status === "queued" || a.status === "writing" ? `<span class="status-running" style="font-size:13px">Jarvis đang viết…</span>`
+          : a.status === "designing" ? `<span class="muted" style="font-size:13px">Đang vẽ ảnh…</span>`
           : `<button class="btn sm ${a.status === "pending" ? "primary" : ""}" data-open="${a.id}">${a.status === "pending" ? "Xem & duyệt" : a.kind === "script" && a.status === "approved" ? "Xem & sửa" : "Xem"}</button>`}
-      </article>`).join("") : `<div class="empty">${state.inbox === "pending" ? "Không có gì chờ duyệt." : "Chưa có mục nào."}</div>`;
+      </article>`).join("") : `<div class="empty">${state.inbox === "pending" ? "Không có gì chờ duyệt." : "Chưa có mục nào."}</div>`);
   }
 
   // ======================= NHẬT KÝ =======================
@@ -1737,11 +1754,11 @@ ${r}
       const ims = approval.meta?.images || [];
       $("#detail-body").innerHTML = `<div style="white-space:normal">
         <div class="fbimgs">${ims.map((im) => im.thumb ? `<img src="data:image/jpeg;base64,${im.thumb}" alt="${esc(im.name || "")}">` : `<span class="muted">${esc(im.name || im.id)}</span>`).join("")}</div>
-        ${approval.meta?.why ? `<p class="muted" style="margin:8px 0">${esc(approval.meta.why)}</p>` : ""}
+        <p class="muted" style="margin:8px 0">${approval.meta?.date ? `Dự kiến đăng ${approval.meta.date.slice(8, 10)}/${approval.meta.date.slice(5, 7)} lúc ${approval.meta.time || "10:00"} · ` : ""}${approval.meta?.type === "canva" ? "Ảnh Jarvis thiết kế trên Canva" : "Ảnh của anh"}${approval.meta?.why ? ` · ${esc(approval.meta.why)}` : ""}</p>${approval.meta?.canva_error ? `<p class="status-error">Chưa thiết kế được ảnh Canva: ${esc(approval.meta.canva_error)}</p>` : ""}
         ${approval.status === "pending" ? `<label class="muted" style="display:block;margin:8px 0 4px">Nội dung bài (sửa trực tiếp nếu cần)</label><textarea id="fb-cap" rows="8" style="width:100%;font:inherit;padding:10px;border-radius:10px;border:1px solid var(--line,#333);background:transparent;color:inherit">${esc(approval.body)}</textarea>`
-          : `<div style="white-space:pre-wrap;margin-top:8px">${esc(approval.body)}</div>${approval.meta?.scheduled_at ? `<p><b>Đăng lúc ${fmt(approval.meta.scheduled_at)}</b> (Facebook, qua Metricool)</p>` : approval.meta?.error ? `<p class="status-error">Lỗi đặt lịch: ${esc(approval.meta.error)}</p>` : approval.status === "approved" ? `<p class="muted">Jarvis sẽ đặt lịch giờ vàng ở lần chạy kế tiếp (mỗi giờ 7h–23h).</p>` : ""}`}
+          : `<div style="white-space:pre-wrap;margin-top:8px">${esc(approval.body)}</div>${approval.meta?.fb_post_id ? `<p><b>Đã hẹn đăng ${fmt(approval.meta.scheduled_at)}</b> trên Page Chuyện Của Thắng (Facebook tự đăng đúng giờ)</p>` : approval.meta?.fb_error ? `<p class="status-error">Lỗi hẹn giờ: ${esc(approval.meta.fb_error)}</p><button class="btn sm" data-fbretry="${approval.id}">Thử lại</button>` : approval.status === "approved" ? `<p class="muted">Jarvis đang hẹn giờ đăng (vài phút).</p>` : ""}`}
       </div>`;
-      $("#detail-actions").innerHTML = approval.status === "pending" ? `<button class="btn primary" data-fbok="${approval.id}">Duyệt & để Jarvis đặt lịch</button><button class="btn danger" data-decide="${approval.id}:rejected">Bỏ bài này</button>` : "";
+      $("#detail-actions").innerHTML = approval.status === "pending" ? `<button class="btn primary" data-fbok="${approval.id}">Duyệt bài này</button><button class="btn danger" data-decide="${approval.id}:rejected">Bỏ bài này</button>` : "";
       return $("#detail").showModal();
     }
     const isScript = approval?.kind === "script";
